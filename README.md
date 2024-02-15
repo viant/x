@@ -23,8 +23,8 @@ module github.com/myorg/myapp
 
 go 1.21
   require (
-    github.com/viant/x v0.1.0
-    github.com/viant/x/extension v0.1.0
+    github.com/viant/x v0.2.0
+    github.com/viant/x/transient v0.0.0-00000000000000-000000000000
     github.com/viant/pgo v0.11.0
     ...
   )
@@ -36,7 +36,7 @@ replace github.com/viant/x => ../../myorg/myapp/x
 
 The local transient extension ```go.mod```
 ```bash
-module github.com/viant/x
+module github.com/viant/x/transient
 
 go 1.21
 
@@ -68,21 +68,21 @@ The extension module ```registry.go```
 package mypkg
 
 import (
-    "github.com/viant/x/extension"
+	"github.com/viant/x"
 )
 
-
-var registry = extension.NewRegistry(extension.WithListener(func(t *extension.Type) {
-    // do something with the type
+var registry = x.NewRegistry(x.WithListener(func(t *x.Type) {
+	// do something with the type
 }))
 
 //Register registers a type with options
-func Register(t *extension.Type) {
-    registry.Register(t)
+func Register(t *x.Type) {
+	registry.Register(t)
 }
 
 //Registry returns extension registry
-func Registry() *extension.Registry {
-    return registry
+func Registry() *x.Registry {
+	return registry
 }
+
 ```
