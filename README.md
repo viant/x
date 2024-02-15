@@ -6,7 +6,7 @@ This project serves as an extension placeholder for a Go module, facilitating an
 
 Consider a scenario where a main application requires extension through custom Go types, which are dynamically reloadable. 
 Suppose the extension module is hosted at github.com/myorg/myapp/extension. 
-This module defines several types and registers them with the [Type Registry](extension/registry.go)
+This module defines several types and registers them with the [Type Registry](registry.go)
 
 The main application, located at github.com/myorg/myapp, needs to access these types both through the Go plugin system for runtime extension and directly as a dependency for compile-time integration. 
 This project is designed to support the direct dependency mechanism, ensuring seamless access to the extension types within the main application's ecosystem.
