@@ -7,10 +7,11 @@ import (
 type (
 	//Registry represents an extension type
 	Registry struct {
-		mux      sync.RWMutex
-		scn      int //scn is the serial number of the registry
-		types    map[string]*Type
-		listener Listener
+		mux           sync.RWMutex
+		scn           int //scn is the serial number of the registry
+		types         map[string]*Type
+		listener      Listener
+		mergeListener MergeListener
 	}
 )
 
@@ -21,13 +22,24 @@ func (r *Registry) Scn() int {
 
 // Merge merges registry
 func (r *Registry) Merge(registry *Registry) {
+	listener := r.listener
+	if r.mergeListener != nil {
+		listener = r.mergeListener()
+	}
 	for _, aType := range registry.types {
-		r.Register(aType)
+		r.register(aType, listener)
+	}
+	if r.mergeListener != nil {
+		listener(nil)
 	}
 }
 
 // Register registers a type
 func (r *Registry) Register(aType *Type) {
+	r.register(aType, r.listener)
+}
+
+func (r *Registry) register(aType *Type, listener Listener) {
 	if aType.Scn == 0 {
 		aType.Scn = r.scn
 	}
@@ -39,8 +51,8 @@ func (r *Registry) Register(aType *Type) {
 		r.mux.Lock()
 		r.types[key] = aType
 		r.mux.Unlock()
-		if r.listener != nil {
-			r.listener(aType)
+		if listener != nil {
+			listener(aType)
 		}
 		return
 	}
@@ -50,8 +62,8 @@ func (r *Registry) Register(aType *Type) {
 	r.mux.Lock()
 	r.types[key] = aType
 	r.mux.Unlock()
-	if r.listener != nil {
-		r.listener(aType)
+	if listener != nil {
+		listener(aType)
 	}
 }
 

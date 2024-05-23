@@ -5,12 +5,14 @@ import "reflect"
 type (
 	//Type represents a type
 	Type struct {
-		Type    reflect.Type
-		Package string
-		Name    string
-		Scn     int
-		Force   bool
-		key     string
+		Type       reflect.Type
+		Package    string
+		Location   string
+		Name       string
+		Definition string
+		Scn        int
+		Force      bool
+		key        string
 	}
 )
 

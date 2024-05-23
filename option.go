@@ -49,3 +49,10 @@ func WithListener(listener Listener) RegistryOption {
 		r.listener = listener
 	}
 }
+
+// WithMergeListener creates a new registry with the specified listener
+func WithMergeListener(listener MergeListener) RegistryOption {
+	return func(r *Registry) {
+		r.mergeListener = listener
+	}
+}
