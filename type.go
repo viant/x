@@ -1,12 +1,14 @@
 package x
 
-import "reflect"
+import (
+	"reflect"
+)
 
 type (
 	//Type represents a type
 	Type struct {
 		Type       reflect.Type
-		Package    string
+		PkgPath    string
 		Location   string
 		Name       string
 		Definition string
@@ -46,8 +48,8 @@ func NewType(t reflect.Type, options ...Option) *Type {
 }
 
 func (t *Type) init() {
-	if t.Package == "" {
-		t.Package = t.Type.PkgPath()
+	if t.PkgPath == "" {
+		t.PkgPath = t.Type.PkgPath()
 	}
 	if t.Name == "" {
 		t.Name = t.Type.Name()
@@ -66,7 +68,7 @@ func (t *Type) Key() string {
 }
 
 func key(t *Type) string {
-	pkg := t.Package
+	pkg := t.PkgPath
 	name := t.Name
 	if pkg == "" {
 		return name

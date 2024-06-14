@@ -8,10 +8,10 @@ type (
 	RegistryOption func(r *Registry)
 )
 
-// WithPackage is an option to set the package name of the type
-func WithPackage(pkg string) Option {
+// WithPkgPath is an option to set the package path of the type
+func WithPkgPath(pkg string) Option {
 	return func(t *Type) {
-		t.Package = pkg
+		t.PkgPath = pkg
 	}
 }
 
