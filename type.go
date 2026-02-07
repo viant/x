@@ -1,6 +1,7 @@
 package x
 
 import (
+	model "github.com/viant/x/syntetic/model"
 	"reflect"
 )
 
@@ -9,12 +10,15 @@ type (
 	Type struct {
 		Type       reflect.Type
 		PkgPath    string
-		Location   string
 		Name       string
 		Definition string
 		Scn        int
 		Force      bool
-		key        string
+		// SynteticType optionally carries a prebuilt synthetic/model Type
+		// associated with this runtime type. This allows callers to attach
+		// a codegen-ready representation without re-deriving it via bridges.
+		SynteticType *model.Type
+		key          string
 	}
 )
 
