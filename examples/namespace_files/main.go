@@ -13,6 +13,7 @@ import (
 	"github.com/viant/x/examples/namespace_files/orders"
 	"github.com/viant/x/loader/xreflect"
 	"github.com/viant/x/syntetic"
+	"github.com/viant/x/syntetic/model"
 )
 
 func main() {
@@ -35,7 +36,7 @@ func main() {
 		log.Fatalf("bridge: %v", err)
 	}
 
-	files, err := ns.BuildFiles(syntetic.RenderOptions{})
+	files, err := ns.BuildFiles(model.RenderOptions{})
 	if err != nil {
 		log.Fatalf("build files: %v", err)
 	}

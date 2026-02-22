@@ -6,7 +6,6 @@ require github.com/viant/afs v1.29.0
 
 require github.com/viant/xunsafe v0.9.2 // indirect
 
-
 require (
 	github.com/go-errors/errors v1.4.2 // indirect
 	github.com/pkg/errors v0.9.1 // indirect

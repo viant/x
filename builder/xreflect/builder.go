@@ -3,6 +3,8 @@ package xreflect
 import (
 	"fmt"
 	"reflect"
+	"sort"
+	"strings"
 
 	"github.com/viant/x/syntetic/model"
 	trf "github.com/viant/x/syntetic/model/transform"
@@ -62,6 +64,37 @@ type Builder struct {
 	unknown    func() reflect.Type
 	allowIface bool
 	tr         trf.Transformer
+	// strictNamed forces unresolved named nodes to return an error instead
+	// of falling back to unknown().
+	strictNamed bool
+	// onUnresolvedNamed is an optional hook for diagnostics/telemetry.
+	onUnresolvedNamed func(pkgPath, name string, candidates []string)
+	// allowAnonRecursion controls handling of anonymous recursive structs.
+	// When false, such shapes return an error (default behavior).
+	// When true, recursive edge materializes via unknown() fallback.
+	allowAnonRecursion bool
+	// onAnonymousRecursion receives synthetic recursion identifiers when an
+	// anonymous recursive edge is encountered in tolerant mode.
+	onAnonymousRecursion func(name string)
+	// synthetic recursion names for current BuildNode traversal.
+	synthetic map[model.Node]string
+	nextID    int
+	// ifaceResolver resolves non-empty interface method sets to compiled interfaces.
+	ifaceResolver InterfaceResolver
+	// strictInterface forces unresolved non-empty interfaces to return an error
+	// instead of falling back to unknown().
+	strictInterface bool
+	// onUnresolvedInterface is an optional diagnostics callback invoked when
+	// strict interface resolution cannot resolve a non-empty interface.
+	onUnresolvedInterface func(methods []model.Method)
+	// strictUnion forces union/type-set nodes to return an error instead of
+	// falling back to unknown().
+	strictUnion bool
+	// onUnresolvedUnion reports union terms when strict mode rejects them.
+	onUnresolvedUnion func(terms []model.Term)
+	// onAlias reports alias declaration metadata while runtime materialization
+	// uses alias target type.
+	onAlias func(alias *model.Alias, resolved reflect.Type)
 }
 
 // New creates a new Builder with optional configuration.
@@ -87,6 +120,8 @@ func (b *Builder) BuildNode(n model.Node) (reflect.Type, error) {
 	if b.tr != nil {
 		n = b.tr.ApplyNode(n)
 	}
+	b.synthetic = map[model.Node]string{}
+	b.nextID = 1
 	return b.build(n, map[model.Node]bool{})
 }
 
@@ -119,7 +154,28 @@ func (b *Builder) build(n model.Node, visiting map[model.Node]bool) (reflect.Typ
 				return rt, nil
 			}
 		}
+		if b.strictNamed {
+			candidates := b.namedCandidates(v.Name)
+			if b.onUnresolvedNamed != nil {
+				b.onUnresolvedNamed(v.PkgPath, v.Name, candidates)
+			}
+			return nil, unresolvedNamedError(v.PkgPath, v.Name, candidates)
+		}
 		return b.unknown(), nil
+	case *model.Alias:
+		// Alias has no distinct runtime identity. Materialize target runtime type
+		// and report alias metadata to caller.
+		if v.Target == nil {
+			return nil, fmt.Errorf("xreflect: alias %s.%s has nil target", v.PkgPath, v.Name)
+		}
+		rt, err := b.build(v.Target, visiting)
+		if err != nil {
+			return nil, err
+		}
+		if b.onAlias != nil {
+			b.onAlias(v, rt)
+		}
+		return rt, nil
 	case *model.Pointer:
 		elem, err := b.build(v.Elem, visiting)
 		if err != nil {
@@ -194,32 +250,38 @@ func (b *Builder) build(n model.Node, visiting map[model.Node]bool) (reflect.Typ
 		}
 		return reflect.FuncOf(ins, outs, v.Variadic), nil
 	case *model.Interface:
-		// For simplicity default to interface{} unless explicitly allowed.
-		if !b.allowIface || len(v.Methods) == 0 {
+		// Empty interface always materializes to interface{}.
+		if len(v.Methods) == 0 {
 			return reflect.TypeOf((*interface{})(nil)).Elem(), nil
 		}
-		// Attempt to construct an interface with the given method set.
-		// Note: reflect.InterfaceOf has constraints; this may still fail
-		// semantically for some shapes. We conservatively fall back to empty
-		// interface by ignoring method names or errors here.
-		methods := make([]reflect.Method, 0, len(v.Methods))
-		for _, m := range v.Methods {
-			mt, err := b.build(&m.Type, visiting)
-			if err != nil {
-				return nil, err
+		// Prefer explicit interface resolver for method-set fidelity.
+		if b.ifaceResolver != nil {
+			if t, ok := b.ifaceResolver.ResolveInterface(v.Methods); ok {
+				return t, nil
 			}
-			if mt == nil {
-				return nil, fmt.Errorf("xreflect: nil method type")
-			}
-			methods = append(methods, reflect.Method{Name: m.Name, Type: mt})
 		}
-		// The reflect package currently does not expose a stable way to build
-		// arbitrary named method interfaces across all versions. Use empty
-		// interface for portability; advanced users can enable allowIface and
-		// provide an Unknown fallback via Resolver as needed.
+		if b.strictInterface {
+			if b.onUnresolvedInterface != nil {
+				b.onUnresolvedInterface(v.Methods)
+			}
+			return nil, unresolvedInterfaceError(v.Methods)
+		}
+		// Legacy tolerant behavior: non-empty unresolved interfaces fallback.
+		if !b.allowIface {
+			return reflect.TypeOf((*interface{})(nil)).Elem(), nil
+		}
+		// reflect package does not offer a reliable cross-version constructor
+		// for arbitrary non-empty interface method sets. Keep tolerant fallback.
 		return reflect.TypeOf((*interface{})(nil)).Elem(), nil
 	case *model.Struct:
 		if visiting[v] {
+			if b.allowAnonRecursion {
+				name := b.syntheticName(v)
+				if b.onAnonymousRecursion != nil {
+					b.onAnonymousRecursion(name)
+				}
+				return b.unknown(), nil
+			}
 			return nil, fmt.Errorf("xreflect: anonymous recursive struct not supported")
 		}
 		visiting[v] = true
@@ -243,7 +305,13 @@ func (b *Builder) build(n model.Node, visiting map[model.Node]bool) (reflect.Typ
 		}
 		return reflect.StructOf(fields), nil
 	case *model.Union:
-		// No runtime representation
+		// No native runtime representation for type-sets/unions.
+		if b.strictUnion {
+			if b.onUnresolvedUnion != nil {
+				b.onUnresolvedUnion(v.Terms)
+			}
+			return nil, unresolvedUnionError(v.Terms)
+		}
 		return b.unknown(), nil
 	}
 	return b.unknown(), nil
@@ -263,3 +331,106 @@ func exportName(name string, embedded bool) string {
 }
 
 func basicToReflect(name string) reflect.Type { return basicTypes[name] }
+
+func (b *Builder) namedCandidates(name string) []string {
+	if len(b.namedCache) == 0 {
+		return nil
+	}
+	suffix := "." + name
+	var candidates []string
+	for k := range b.namedCache {
+		if strings.HasSuffix(k, suffix) {
+			candidates = append(candidates, k)
+		}
+	}
+	sort.Strings(candidates)
+	return candidates
+}
+
+func unresolvedNamedError(pkgPath, name string, candidates []string) error {
+	if len(candidates) == 0 {
+		return fmt.Errorf("xreflect: unresolved named type %s.%s", pkgPath, name)
+	}
+	return fmt.Errorf("xreflect: unresolved named type %s.%s; candidates: %s", pkgPath, name, strings.Join(candidates, ", "))
+}
+
+func unresolvedInterfaceError(methods []model.Method) error {
+	if len(methods) == 0 {
+		return fmt.Errorf("xreflect: unresolved interface")
+	}
+	names := make([]string, 0, len(methods))
+	for _, m := range methods {
+		names = append(names, m.Name)
+	}
+	sort.Strings(names)
+	return fmt.Errorf("xreflect: unresolved non-empty interface; methods: %s", strings.Join(names, ", "))
+}
+
+func unresolvedUnionError(terms []model.Term) error {
+	if len(terms) == 0 {
+		return fmt.Errorf("xreflect: unresolved union/type-set constraint")
+	}
+	parts := NormalizeUnionTerms(terms)
+	return fmt.Errorf("xreflect: unresolved union/type-set constraint: %s", strings.Join(parts, " | "))
+}
+
+// NormalizeUnionTerms stringifies union terms using stable formatting.
+// Example output items: "~int", "string", "*example.com/p.Type".
+func NormalizeUnionTerms(terms []model.Term) []string {
+	if len(terms) == 0 {
+		return nil
+	}
+	parts := make([]string, 0, len(terms))
+	for _, t := range terms {
+		item := "<?>"
+		if t.Type != nil {
+			item = nodeLabel(t.Type)
+		}
+		if t.Approx {
+			item = "~" + item
+		}
+		parts = append(parts, item)
+	}
+	return parts
+}
+
+// JoinUnionTerms returns union terms joined with " | " for diagnostics.
+func JoinUnionTerms(terms []model.Term) string {
+	return strings.Join(NormalizeUnionTerms(terms), " | ")
+}
+
+func nodeLabel(n model.Node) string {
+	switch v := n.(type) {
+	case *model.Basic:
+		if v.PkgPath != "" {
+			return v.PkgPath + "." + v.Name
+		}
+		return v.Name
+	case *model.Named:
+		return v.PkgPath + "." + v.Name
+	case *model.Pointer:
+		return "*" + nodeLabel(v.Elem)
+	case *model.Slice:
+		return "[]" + nodeLabel(v.Elem)
+	case *model.Array:
+		return fmt.Sprintf("[%d]%s", v.Len, nodeLabel(v.Elem))
+	case *model.Map:
+		return "map[" + nodeLabel(v.Key) + "]" + nodeLabel(v.Elem)
+	case *model.Chan:
+		return "chan " + nodeLabel(v.Elem)
+	case *model.Alias:
+		return v.PkgPath + "." + v.Name
+	default:
+		return "<node>"
+	}
+}
+
+func (b *Builder) syntheticName(n model.Node) string {
+	if name, ok := b.synthetic[n]; ok {
+		return name
+	}
+	name := fmt.Sprintf("AnonymousRecursive%d", b.nextID)
+	b.nextID++
+	b.synthetic[n] = name
+	return name
+}

@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"github.com/viant/afs/mem"
+	loader "github.com/viant/x/loader/ast"
 	"github.com/viant/x/syntetic/adapter"
-	"github.com/viant/x/syntetic/loader"
 )
 
 // NewMemModuleFS creates a unique in-memory module and seeds it with files.
