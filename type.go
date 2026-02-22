@@ -8,8 +8,10 @@ import (
 type (
 	//Type represents a type
 	Type struct {
-		Type       reflect.Type
-		PkgPath    string
+		Type    reflect.Type
+		PkgPath string
+		// Location is kept for backward compatibility with earlier x.Type shape.
+		Location   string
 		Name       string
 		Definition string
 		Scn        int
