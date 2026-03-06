@@ -82,6 +82,9 @@ func nodeToAST(n Node, currentPkg string, aliases map[string]string) ast.Expr {
 				field.Names = []*ast.Ident{ast.NewIdent(f.Name)}
 			}
 			field.Type = nodeToAST(f.Type, currentPkg, aliases)
+			if f.Tag != "" {
+				field.Tag = &ast.BasicLit{Kind: token.STRING, Value: "`" + f.Tag + "`"}
+			}
 			fl.List = append(fl.List, &field)
 		}
 		return &ast.StructType{Fields: fl}

@@ -157,7 +157,11 @@ func toStructFieldList(fields []Field, imps *ImportSet) (*ast.FieldList, error) 
 		if !f.Embedded && f.Name != "" {
 			names = []*ast.Ident{ast.NewIdent(f.Name)}
 		}
-		out[i] = &ast.Field{Names: names, Type: expr}
+		field := &ast.Field{Names: names, Type: expr}
+		if f.Tag != "" {
+			field.Tag = &ast.BasicLit{Kind: token.STRING, Value: "`" + f.Tag + "`"}
+		}
+		out[i] = field
 	}
 	return &ast.FieldList{List: out}, nil
 }
