@@ -441,14 +441,16 @@ func (r Resolver) Resolve(source string) (*Resolution, error) {
 			return nil, err
 		}
 	}
-	if descriptor == nil && len(ref.Arguments) > 0 {
+	if len(ref.Arguments) > 0 {
 		base := ref.BaseName
 		if ref.Qualifier != "" {
 			base = ref.Qualifier + "." + base
 		}
-		descriptor, err = r.Lookup(base)
-		if err != nil {
-			return nil, err
+		if descriptor == nil {
+			descriptor, err = r.Lookup(base)
+			if err != nil {
+				return nil, err
+			}
 		}
 		if descriptor != nil && descriptor.SynteticType != nil && descriptor.SynteticType.TypeSpec != nil {
 			descriptor, err = (x.Cloner{}).Type(descriptor)
@@ -466,6 +468,9 @@ func (r Resolver) Resolve(source string) (*Resolution, error) {
 				if len(names) != len(ref.Arguments) {
 					return nil, fmt.Errorf("type %s expects %d arguments", base, len(names))
 				}
+				if err := r.validateGenericConstraints(descriptor, params, ref.Arguments); err != nil {
+					return nil, err
+				}
 				substitute := Resolver{Rewriter: func(name string) (string, error) {
 					for i, param := range names {
 						if name == param {
@@ -480,6 +485,12 @@ func (r Resolver) Resolve(source string) (*Resolution, error) {
 				}
 				descriptor.SynteticType.TypeSpec.Type = expr
 				descriptor.SynteticType.TypeSpec.TypeParams = nil
+				if err := substitute.specializeMethods(descriptor, names, ref.Arguments); err != nil {
+					return nil, err
+				}
+				descriptor.Name = ref.Name
+				descriptor.SynteticType.Name = ref.Name
+				descriptor.SynteticType.TypeParams = nil
 			}
 		}
 	}

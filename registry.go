@@ -11,6 +11,7 @@ type (
 		mux           sync.RWMutex
 		scn           int //scn is the serial number of the registry
 		types         map[string]*Type
+		functions     map[string]*Function
 		listener      Listener
 		mergeListener MergeListener
 	}
@@ -22,6 +23,8 @@ func (r *Registry) Scn() int {
 }
 
 // Merge merges all types from the supplied registry into r.
+// Compiled function exports are deliberately separate: use
+// RegisterFunctions(registry.Functions()...) to merge them with explicit errors.
 //
 // Listener behaviour:
 //   - If a MergeListener is configured, Merge calls it once to obtain a

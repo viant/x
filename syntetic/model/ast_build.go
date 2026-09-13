@@ -5,6 +5,14 @@ import (
 	"go/token"
 )
 
+// TypeAST renders a function type through the model's canonical AST owner.
+func (f *Func) TypeAST(currentPkg string, aliases map[string]string) *ast.FuncType {
+	if f == nil {
+		return nil
+	}
+	return funcToAST(f, currentPkg, aliases).(*ast.FuncType)
+}
+
 // ToTypeSpec builds a go/ast.TypeSpec for this type and includes generic
 // type parameters (TypeParams) when present. If t.TypeSpec is non-nil it is
 // shallow-copied to preserve the original Type node.

@@ -11,6 +11,31 @@ import (
 // types are immutable and retain their exact identity.
 type Cloner struct{}
 
+// Registry snapshots types and compiled functions under one source read lock.
+// Listeners are not copied or invoked. Callable closures retain their identity;
+// callers must not capture mutable generation state in shared exports.
+func (c Cloner) Registry(source *Registry) (*Registry, error) {
+	if source == nil {
+		return nil, fmt.Errorf("registry is required")
+	}
+	source.mux.RLock()
+	defer source.mux.RUnlock()
+	result := NewRegistry(WithRegistryScn(source.scn))
+	for key, typ := range source.types {
+		copy, err := c.Type(typ)
+		if err != nil {
+			return nil, err
+		}
+		result.types[key] = copy
+	}
+	result.functions = make(map[string]*Function, len(source.functions))
+	for key, function := range source.functions {
+		copy := *function
+		result.functions[key] = &copy
+	}
+	return result, nil
+}
+
 func (Cloner) Type(source *Type) (*Type, error) {
 	if source == nil {
 		return nil, nil

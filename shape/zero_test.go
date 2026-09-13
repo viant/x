@@ -5,6 +5,44 @@ import (
 	"testing"
 )
 
+func TestWithZeroFieldsPreservesNamedPointers(t *testing.T) {
+	type flags struct{ ID, Name bool }
+	type pointer *flags
+	type outer struct{ Flags pointer }
+	source := pointer(&flags{ID: true, Name: true})
+	result, err := (Runtime{}).WithZeroFields(source, "ID")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reflect.TypeOf(result) != reflect.TypeOf(source) {
+		t.Fatalf("type=%T want=%T", result, source)
+	}
+	actual := result.(pointer)
+	if actual == source || actual.ID || !actual.Name || !source.ID {
+		t.Fatal("named pointer copy changed identity/data")
+	}
+	rootCopy, err := (Runtime{}).WithZeroFields(source)
+	if err != nil || reflect.TypeOf(rootCopy) != reflect.TypeOf(source) || rootCopy.(pointer) == source || !rootCopy.(pointer).ID {
+		t.Fatalf("root pointer copy=%T error=%v", rootCopy, err)
+	}
+	var missing pointer
+	for _, paths := range [][]string{nil, {"ID"}} {
+		cloned, err := (Runtime{}).WithZeroFields(missing, paths...)
+		if err != nil || reflect.TypeOf(cloned) != reflect.TypeOf(missing) || cloned.(pointer) != nil {
+			t.Fatalf("nil named pointer=%T error=%v", cloned, err)
+		}
+	}
+	nested := &outer{Flags: source}
+	result, err = (Runtime{}).WithZeroFields(nested, "Flags.Name")
+	if err != nil {
+		t.Fatal(err)
+	}
+	copy := result.(*outer)
+	if copy.Flags == source || copy.Flags.Name || !copy.Flags.ID || !source.Name {
+		t.Fatal("nested named pointer not detached")
+	}
+}
+
 func TestWithZeroFieldsCopyOnWrite(t *testing.T) {
 	type flags struct{ ID, Name bool }
 	type filter struct {

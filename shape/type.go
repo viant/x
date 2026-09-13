@@ -23,6 +23,7 @@ type Field struct {
 	Index               []int
 	Anonymous, Exported bool
 	PkgPath             string
+	authority           *fieldAuthority
 }
 
 func New(descriptor *x.Type, lookup Lookup) *Type {
@@ -151,6 +152,7 @@ structure:
 		return nil, nil
 	}
 	var result []Field
+	authority := t.fieldAuthority()
 	index := 0
 	for _, source := range structure.Fields.List {
 		typeExpr := rendered(source.Type)
@@ -172,7 +174,7 @@ structure:
 			names = []*ast.Ident{ast.NewIdent(ref.BaseName)}
 		}
 		for _, name := range names {
-			field := Field{Name: name.Name, TypeExpr: typeExpr, Tag: reflect.StructTag(tag), Index: []int{index}, Anonymous: anonymous, Exported: token.IsExported(name.Name)}
+			field := Field{Name: name.Name, TypeExpr: typeExpr, Tag: reflect.StructTag(tag), Index: []int{index}, Anonymous: anonymous, Exported: token.IsExported(name.Name), authority: authority}
 			if !field.Exported {
 				field.PkgPath = t.descriptor.PkgPath
 			}
@@ -289,7 +291,7 @@ func (t *Type) FieldsAt(fieldPath string) ([]Field, error) {
 		if found.ReflectedType != nil {
 			current = Linked(found.ReflectedType)
 		} else {
-			current, err = current.resolve(found.TypeExpr)
+			current, err = current.fieldShape(*found)
 			if err != nil {
 				return nil, err
 			}

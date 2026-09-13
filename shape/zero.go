@@ -40,6 +40,9 @@ func (r Runtime) zeroPathRoot(value reflect.Value) reflect.Value {
 		}
 		copy := reflect.New(value.Type().Elem())
 		copy.Elem().Set(r.zeroPathRoot(value.Elem()))
+		if copy.Type() != value.Type() {
+			copy = copy.Convert(value.Type())
+		}
 		return copy
 	}
 	copy := reflect.New(value.Type()).Elem()
@@ -58,6 +61,9 @@ func (r Runtime) zeroPath(value reflect.Value, indexes []int) (reflect.Value, er
 		}
 		copy := reflect.New(value.Type().Elem())
 		copy.Elem().Set(child)
+		if copy.Type() != value.Type() {
+			copy = copy.Convert(value.Type())
+		}
 		return copy, nil
 	}
 	if value.Kind() != reflect.Struct || len(indexes) == 0 {
