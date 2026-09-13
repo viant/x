@@ -33,7 +33,9 @@ func astFuncTypeToModelFunc(ft *ast.FuncType, currentPkg string, aliasIndex map[
 				}
 			}
 			n := astExprToModelNode(f.Type, currentPkg, aliasIndex)
-			out.Params = append(out.Params, model.Field{Type: n})
+			for count := 0; count < max(1, len(f.Names)); count++ {
+				out.Params = append(out.Params, model.Field{Type: n})
+			}
 			if variadic {
 				out.Variadic = true
 			}
@@ -42,7 +44,9 @@ func astFuncTypeToModelFunc(ft *ast.FuncType, currentPkg string, aliasIndex map[
 	if ft.Results != nil {
 		for _, f := range ft.Results.List {
 			n := astExprToModelNode(f.Type, currentPkg, aliasIndex)
-			out.Results = append(out.Results, model.Field{Type: n})
+			for count := 0; count < max(1, len(f.Names)); count++ {
+				out.Results = append(out.Results, model.Field{Type: n})
+			}
 		}
 	}
 	return out

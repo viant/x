@@ -149,7 +149,11 @@ func funcToAST(fn *Func, currentPkg string, aliases map[string]string) ast.Expr 
 	params := &ast.FieldList{}
 	for i, p := range fn.Params {
 		if fn.Variadic && i == len(fn.Params)-1 {
-			params.List = append(params.List, &ast.Field{Type: &ast.Ellipsis{Elt: nodeToAST(p.Type, currentPkg, aliases)}})
+			element := p.Type
+			if slice, ok := element.(*Slice); ok {
+				element = slice.Elem
+			}
+			params.List = append(params.List, &ast.Field{Type: &ast.Ellipsis{Elt: nodeToAST(element, currentPkg, aliases)}})
 		} else {
 			params.List = append(params.List, &ast.Field{Type: nodeToAST(p.Type, currentPkg, aliases)})
 		}

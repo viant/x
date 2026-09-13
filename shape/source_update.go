@@ -21,7 +21,7 @@ type SourceFieldTypeUpdate struct {
 // destination bytes outside changed type expressions and necessary import edits;
 // it does not replace declarations, tags, comments, methods or field order.
 func (SourceParser) UpdateStructFields(existing, generated []byte, updates []SourceFieldTypeUpdate) ([]byte, error) {
-	return (&sourceAppend{existing: existing, generated: generated, updates: updates}).merge()
+	return (SourceParser{}).EditStructFields(existing, generated, SourceFieldEdits{Types: updates})
 }
 
 func (m *sourceAppend) prepareUpdates() error {

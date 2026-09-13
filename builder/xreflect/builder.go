@@ -130,6 +130,13 @@ func (b *Builder) build(n model.Node, visiting map[model.Node]bool) (reflect.Typ
 		return nil, nil
 	}
 	switch v := n.(type) {
+	case *model.Instantiation:
+		// Reflect cannot instantiate a generic declaration. Do not silently
+		// weaken a strict signature to interface{} for a newly loaded node.
+		if b.strictNamed {
+			return nil, fmt.Errorf("xreflect: generic instantiation requires a compiled runtime type")
+		}
+		return b.unknown(), nil
 	case *model.Basic:
 		return basicToReflect(v.Name), nil
 	case *model.Named:

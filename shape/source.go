@@ -24,8 +24,17 @@ type Source struct {
 }
 type SourceParser struct{}
 
-func (SourceParser) ParseFile(filename string) (*Source, error) {
-	file, err := parser.ParseFile(token.NewFileSet(), filename, nil, parser.ParseComments|parser.SkipObjectResolution)
+func (p SourceParser) ParseFile(filename string) (*Source, error) {
+	return p.parse(filename, nil)
+}
+
+// Parse projects Go source bytes without requiring a filesystem artifact.
+func (p SourceParser) Parse(source []byte) (*Source, error) {
+	return p.parse("source.go", source)
+}
+
+func (SourceParser) parse(filename string, source any) (*Source, error) {
+	file, err := parser.ParseFile(token.NewFileSet(), filename, source, parser.ParseComments|parser.SkipObjectResolution)
 	if err != nil {
 		return nil, err
 	}

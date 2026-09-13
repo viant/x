@@ -34,6 +34,9 @@ type sourceAppend struct {
 	insertions             []sourceInsertion
 	needed                 map[string]bool
 	updates                []SourceFieldTypeUpdate
+	removals               []SourceFieldRemoval
+	tagUpdates             []SourceFieldTagUpdate
+	authorizedTags         map[string]SourceFieldTagUpdate
 	authorized             map[string]string
 	retiredImports         map[string]bool
 }
@@ -54,6 +57,9 @@ func (m *sourceAppend) merge() ([]byte, error) {
 	}
 	m.oldImports, m.newImports = m.imports(m.oldFile), m.imports(m.newFile)
 	m.needed = map[string]bool{}
+	if err = m.prepareTagUpdates(); err != nil {
+		return nil, err
+	}
 	if err = m.prepareUpdates(); err != nil {
 		return nil, err
 	}
@@ -135,6 +141,9 @@ func (m *sourceAppend) merge() ([]byte, error) {
 				return nil, err
 			}
 		}
+	}
+	if err = m.removeFields(); err != nil {
+		return nil, err
 	}
 	if err = m.addImports(); err != nil {
 		return nil, err
@@ -232,13 +241,17 @@ func (m *sourceAppend) fields(owner string, previous, generated *ast.StructType)
 			if field.Tag != nil {
 				newTag, _ = strconv.Unquote(field.Tag.Value)
 			}
+			tagAuthorized, err := m.updateFieldTag(owner+"."+name, old, field)
+			if err != nil {
+				return err
+			}
 			if _, authorized := m.authorized[owner+"."+name]; authorized {
 				if oldType != newType {
 					if err := m.updateField(owner, name, old, field); err != nil {
 						return err
 					}
 				}
-			} else if oldType != newType || oldTag != newTag {
+			} else if oldType != newType || oldTag != newTag && !tagAuthorized {
 				return fmt.Errorf("shape field %s.%s has conflicting type or tag; explicit migration required", owner, name)
 			}
 		}

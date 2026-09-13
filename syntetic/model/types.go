@@ -36,7 +36,7 @@ type Type struct {
 	TypeSpec *ast.TypeSpec
 
 	// Imports lists imports needed for this type's declaration,
-	// keyed by alias ("" for default).
+	// keyed by effective alias; an empty key is accepted for authored defaults.
 	Imports map[string]*ImportRef
 
 	// bodyCache is a cached rendered declaration fragment, e.g.

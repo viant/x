@@ -270,7 +270,29 @@ func (r Resolver) Canonical(source any) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	ast.Inspect(expression, func(node ast.Node) bool {
+		if function, ok := node.(*ast.FuncType); ok {
+			function.Params = r.unnamedParameters(function.Params)
+			function.Results = r.unnamedParameters(function.Results)
+		}
+		return true
+	})
 	return r.canonicalSyntax(expression), nil
+}
+
+// unnamedParameters preserves function arity while discarding names, which
+// are not part of Go type identity. Canonical operates on a detached AST.
+func (r Resolver) unnamedParameters(fields *ast.FieldList) *ast.FieldList {
+	if fields == nil {
+		return nil
+	}
+	result := &ast.FieldList{}
+	for _, field := range fields.List {
+		for i := 0; i < max(1, len(field.Names)); i++ {
+			result.List = append(result.List, &ast.Field{Type: field.Type})
+		}
+	}
+	return result
 }
 
 func (r Resolver) canonicalSyntax(expression ast.Expr) string {
@@ -297,9 +319,33 @@ func (r Resolver) canonicalSyntax(expression ast.Expr) string {
 		return r.canonicalSyntax(value.X) + "[" + strings.Join(arguments, ",") + "]"
 	case *ast.Ellipsis:
 		return "..." + r.canonicalSyntax(value.Elt)
+	case *ast.FuncType:
+		signature := "func(" + strings.Join(r.canonicalParameters(value.Params), ", ") + ")"
+		results := r.canonicalParameters(value.Results)
+		if len(results) == 1 {
+			return signature + " " + results[0]
+		}
+		if len(results) > 1 {
+			return signature + " (" + strings.Join(results, ", ") + ")"
+		}
+		return signature
 	default:
 		return rendered(expression)
 	}
+}
+
+func (r Resolver) canonicalParameters(fields *ast.FieldList) []string {
+	var result []string
+	if fields == nil {
+		return result
+	}
+	for _, field := range fields.List {
+		value := r.canonicalSyntax(field.Type)
+		for i := 0; i < max(1, len(field.Names)); i++ {
+			result = append(result, value)
+		}
+	}
+	return result
 }
 
 func (r Resolver) Rewrite(source string) (string, error) {

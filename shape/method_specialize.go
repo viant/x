@@ -48,19 +48,39 @@ func (r Resolver) specializeMethods(descriptor *x.Type, names, arguments []strin
 					parameterNames = reference.Arguments
 				}
 			}
+			scope := r.methodScope(synthetic, decl.Name.Name)
 			substitute := Resolver{Rewriter: func(name string) (string, error) {
 				for i, param := range parameterNames {
 					if name == param {
 						return arguments[i], nil
 					}
 				}
-				return name, nil
+				ref, err := (Resolver{}).Reference(name)
+				if err != nil {
+					return "", err
+				}
+				qualifier := ref.Qualifier
+				if imported, ok := scope.Imports[qualifier]; ok {
+					qualifier = imported
+				} else if qualifier == "" && !builtin(ref.BaseName) {
+					qualifier = synthetic.PkgPath
+				}
+				if qualifier != "" {
+					return qualifier + "." + ref.Name, nil
+				}
+				return ref.Name, nil
 			}}
 			expression, err := substitute.rewrite(decl.Type)
 			if err != nil {
 				return fmt.Errorf("specialize method %s: %w", decl.Name.Name, err)
 			}
 			decl.Type = expression.(*ast.FuncType)
+			// Both substituted arguments and original method types now carry
+			// package identities; source aliases must not reinterpret them.
+			if synthetic.MethodImports == nil {
+				synthetic.MethodImports = make(map[string]map[string]*model.ImportRef)
+			}
+			synthetic.MethodImports[decl.Name.Name] = map[string]*model.ImportRef{}
 		}
 	}
 	// AST signatures are now the specialized authority; the original model

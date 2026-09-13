@@ -108,3 +108,39 @@ func (Row) Second(value h.Snapshot[Row]) error { return nil }
 		})
 	}
 }
+
+func TestSpecializedMethodPreservesArgumentPackage(t *testing.T) {
+	fsys := fstest.MapFS{
+		"go.mod":   {Data: []byte("module example.com/rows\n\ngo 1.21\n")},
+		"types.go": {Data: []byte("package rows\ntype Box[T any] struct{}")},
+		"methods.go": {Data: []byte(`package rows
+import time "net/url"
+func (Box[T]) Apply(value T, other time.URL) []T { return nil }
+`)},
+	}
+	pkg, err := loader.LoadPackageFS(context.Background(), fsys, ".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	descriptor := &x.Type{Name: "Box", PkgPath: pkg.PkgPath, SynteticType: pkg.Types[0]}
+	r := shape.Resolver{Package: pkg.PkgPath, Lookup: func(name string) (*x.Type, error) {
+		if name == "example.com/rows.Box" {
+			return descriptor, nil
+		}
+		return nil, nil
+	}}
+	for _, argument := range []string{"time.Time", "[]time.Time", "map[string]time.Time"} {
+		resolved, err := r.Resolve("Box[" + argument + "]")
+		if err != nil {
+			t.Fatal(err)
+		}
+		methods, err := shape.New(resolved.Descriptor, nil).Methods(false)
+		want := []shape.Method{{Name: "Apply", Parameters: []string{argument, "net/url.URL"}, Results: []string{"[]" + argument}}}
+		if err != nil || !reflect.DeepEqual(want, methods) {
+			t.Fatalf("argument=%s: methods=%#v, err=%v", argument, methods, err)
+		}
+	}
+	if descriptor.SynteticType.MethodImports["Apply"]["time"].Path != "net/url" {
+		t.Fatal("specialization mutated source imports")
+	}
+}
