@@ -106,8 +106,8 @@ func (m *sourceAppend) merge() ([]byte, error) {
 			oldStruct, oldOK := previous.Type.(*ast.StructType)
 			newStruct, newOK := definition.Type.(*ast.StructType)
 			if !oldOK || !newOK || previous.Assign.IsValid() != definition.Assign.IsValid() {
-				oldType, e1 := (Resolver{Imports: m.oldImports}).Canonical(previous.Type)
-				newType, e2 := (Resolver{Imports: m.newImports}).Canonical(definition.Type)
+				oldType, e1 := m.canonical(previous.Type, m.oldImports)
+				newType, e2 := m.canonical(definition.Type, m.newImports)
 				if e1 != nil || e2 != nil || oldType != newType || previous.Assign.IsValid() != definition.Assign.IsValid() {
 					return nil, fmt.Errorf("shape type %s changed; explicit migration required", definition.Name.Name)
 				}
@@ -160,7 +160,7 @@ func (m *sourceAppend) parameters(fields *ast.FieldList, imports map[string]stri
 			result.WriteString(name.Name)
 			result.WriteByte(',')
 		}
-		canonical, err := (Resolver{Imports: imports}).Canonical(field.Type)
+		canonical, err := m.canonical(field.Type, imports)
 		if err != nil {
 			return "", err
 		}
@@ -207,11 +207,11 @@ func (m *sourceAppend) fields(owner string, previous, generated *ast.StructType)
 				missing++
 				continue
 			}
-			oldType, err := (Resolver{Imports: m.oldImports}).Canonical(old.Type)
+			oldType, err := m.canonical(old.Type, m.oldImports)
 			if err != nil {
 				return err
 			}
-			newType, err := (Resolver{Imports: m.newImports}).Canonical(field.Type)
+			newType, err := m.canonical(field.Type, m.newImports)
 			if err != nil {
 				return err
 			}
@@ -251,6 +251,29 @@ func (m *sourceAppend) fields(owner string, previous, generated *ast.StructType)
 		m.insertions = append(m.insertions, sourceInsertion{m.oldSet.Position(previous.Fields.Closing).Offset, additions.String()})
 	}
 	return nil
+}
+
+func (m *sourceAppend) canonical(expression ast.Expr, imports map[string]string) (string, error) {
+	var failure error
+	ast.Inspect(expression, func(node ast.Node) bool {
+		selector, ok := node.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		qualifier, ok := selector.X.(*ast.Ident)
+		if !ok {
+			return true
+		}
+		if _, ok := imports[qualifier.Name]; !ok {
+			failure = fmt.Errorf("cannot resolve type qualifier %s: use an explicit import alias matching its package identifier", qualifier.Name)
+			return false
+		}
+		return true
+	})
+	if failure != nil {
+		return "", failure
+	}
+	return (Resolver{Imports: imports}).Canonical(expression)
 }
 
 func (m *sourceAppend) fieldNames(field *ast.Field) []string {

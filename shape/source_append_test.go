@@ -34,6 +34,7 @@ func TestSourceAppendStructFields(t *testing.T) {
 		{name: "unresolved default package qualifier", existing: "package p;type Row struct{}", generated: "package p\nimport \"example.com/foo/v2\"\ntype Row struct{ Value foo.Value }", failure: "explicit import alias"},
 		{name: "explicit versioned package qualifier", existing: "package p;type Row struct{}", generated: "package p\nimport foo \"example.com/foo/v2\"\ntype Row struct{ Value foo.Value }", want: []string{"import foo \"example.com/foo/v2\"", "Value foo.Value"}},
 		{name: "type conflicts with existing function", existing: "package p;func Row(){}", generated: "package p;type Row struct{}", failure: "existing package declaration"},
+		{name: "unresolved matched type cannot hide import change", existing: "package p\nimport \"example.com/foo/v2\"\ntype Row struct{ Value foo.Value }", generated: "package p\nimport \"another.example/foo/v2\"\ntype Row struct{ Value foo.Value }", failure: "explicit import alias"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			actual, err := (SourceParser{}).AppendStructFields([]byte(test.existing), []byte(test.generated))
