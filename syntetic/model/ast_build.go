@@ -57,6 +57,16 @@ func (t *Type) ToGenDecl(currentPkg string, aliases map[string]string) *ast.GenD
 // constraints or simple type emission.
 func nodeToAST(n Node, currentPkg string, aliases map[string]string) ast.Expr {
 	switch v := n.(type) {
+	case *Instantiation:
+		base := nodeToAST(v.Base, currentPkg, aliases)
+		arguments := make([]ast.Expr, len(v.Arguments))
+		for i, argument := range v.Arguments {
+			arguments[i] = nodeToAST(argument, currentPkg, aliases)
+		}
+		if len(arguments) == 1 {
+			return &ast.IndexExpr{X: base, Index: arguments[0]}
+		}
+		return &ast.IndexListExpr{X: base, Indices: arguments}
 	case *Basic:
 		if v.PkgPath == "" {
 			return ast.NewIdent(v.Name)

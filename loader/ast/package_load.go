@@ -33,8 +33,9 @@ func LoadPackageFS(ctx context.Context, fsys fs.FS, dir string) (*model.Package,
 		return nil, err
 	}
 	pkg := &model.Package{PkgPath: pkgPath}
+	var methods []pendingMethod
 	for _, filename := range files {
-		gf, err := loadPackageFile(ctx, fsys, filename, pkg)
+		gf, err := loadPackageFile(ctx, fsys, filename, pkg, &methods)
 		if err != nil {
 			return nil, err
 		}
@@ -42,6 +43,10 @@ func LoadPackageFS(ctx context.Context, fsys fs.FS, dir string) (*model.Package,
 			pkg.Name = gf.PkgName
 		}
 		pkg.AddFile(gf)
+	}
+	// Receiver declarations may occur after their methods, including in another file.
+	for _, method := range methods {
+		bindMethodToType(pkg, method.declaration, method.imports)
 	}
 	return pkg, nil
 }
@@ -84,7 +89,7 @@ func packagePathForDir(fsys fs.FS, dir string) (string, error) {
 // It collects imports, //go:embed directives, type declarations (including
 // generics), consts and vars (tracking referenced imports), and binds both
 // methods (receiver functions) and free-standing functions.
-func loadPackageFile(ctx context.Context, fsys fs.FS, filename string, pkg *model.Package) (*model.GoFile, error) {
+func loadPackageFile(ctx context.Context, fsys fs.FS, filename string, pkg *model.Package, methods *[]pendingMethod) (*model.GoFile, error) {
 	src, err := fs.ReadFile(fsys, filename)
 	if err != nil {
 		return nil, fmt.Errorf("loader: read %s: %w", filename, err)
@@ -114,7 +119,7 @@ func loadPackageFile(ctx context.Context, fsys fs.FS, filename string, pkg *mode
 	for _, decl := range file.Decls {
 		if fdecl, ok := decl.(*ast.FuncDecl); ok {
 			if fdecl.Recv != nil { // method
-				bindMethodToType(pkg, fdecl, aliasIndex)
+				*methods = append(*methods, pendingMethod{declaration: fdecl, imports: aliasIndex})
 			} else { // free-standing function
 				fn := &model.Function{Name: fdecl.Name.Name, Type: astFuncTypeToModelFunc(fdecl.Type, pkg.PkgPath, aliasIndex), Decl: fdecl, File: path.Base(filename)}
 				pkg.Funcs = append(pkg.Funcs, fn)
@@ -146,9 +151,9 @@ func processTypes(gen *ast.GenDecl, gf *model.GoFile, pkg *model.Package, aliasI
 			continue
 		}
 		t := &model.Type{Name: ts.Name.Name, PkgPath: pkg.PkgPath, TypeSpec: ts, Imports: map[string]*model.ImportRef{}}
-		for _, r := range gf.Imports {
+		for alias, r := range aliasIndex {
 			r := r
-			t.Imports[r.Alias] = &r
+			t.Imports[alias] = &r
 		}
 		if ts.TypeParams != nil {
 			// Capture type parameters declared on this type (e.g. type Box[T any]).

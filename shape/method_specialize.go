@@ -12,12 +12,6 @@ import (
 // Method receiver parameter names may differ from type declaration names.
 func (r Resolver) specializeMethods(descriptor *x.Type, names, arguments []string) error {
 	synthetic := descriptor.SynteticType
-	aliases := map[string]string{}
-	for alias, item := range synthetic.Imports {
-		if item != nil {
-			aliases[item.Path] = alias
-		}
-	}
 	for _, pair := range []struct {
 		models       []model.Method
 		declarations *[]*ast.FuncDecl
@@ -30,6 +24,10 @@ func (r Resolver) specializeMethods(descriptor *x.Type, names, arguments []strin
 		}
 		for _, method := range pair.models {
 			if !known[method.Name] {
+				aliases := map[string]string{}
+				for alias, location := range r.methodScope(synthetic, method.Name).Imports {
+					aliases[location] = alias
+				}
 				*pair.declarations = append(*pair.declarations, &ast.FuncDecl{Name: ast.NewIdent(method.Name), Type: method.Type.TypeAST(synthetic.PkgPath, aliases)})
 			}
 		}

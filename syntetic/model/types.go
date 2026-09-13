@@ -48,6 +48,10 @@ type Type struct {
 	// PtrMethodsAST holds parsed method declarations with a pointer receiver of this type.
 	PtrMethodsAST []*ast.FuncDecl
 
+	// MethodImports preserves each method's source-file import scope by name.
+	// Missing entries use the type declaration's imports for authored descriptors.
+	MethodImports map[string]map[string]*ImportRef
+
 	// Methods holds parsed method signatures attached to this type. Value
 	// contains methods with a value receiver; Pointer contains methods with a
 	// pointer receiver. This mirrors the AST lists and provides a model-level
@@ -62,6 +66,14 @@ type Type struct {
 type MethodSet struct {
 	Value   []Method
 	Pointer []Method
+}
+
+// ImportsForMethod returns the source scope for a method signature.
+func (t *Type) ImportsForMethod(name string) map[string]*ImportRef {
+	if imports, ok := t.MethodImports[name]; ok {
+		return imports
+	}
+	return t.Imports
 }
 
 // Body returns the Go syntax fragment that forms the right-hand side

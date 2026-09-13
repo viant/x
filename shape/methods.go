@@ -81,26 +81,14 @@ func (t *Type) declaredMethods(pointer bool) ([]Method, error) {
 	if synthetic == nil {
 		return nil, fmt.Errorf("type %s has no linked or synthetic method authority", t.descriptor.Key())
 	}
-	imports := map[string]string{}
-	for alias, item := range synthetic.Imports {
-		if item == nil {
-			continue
-		}
-		if alias == "" {
-			alias = item.Alias
-		}
-		if alias == "" {
-			alias = path.Base(item.Path)
-		}
-		imports[alias] = item.Path
-	}
 	location := synthetic.PkgPath
 	if location == "" {
 		location = t.descriptor.PkgPath
 	}
-	collector := methodCollector{resolver: Resolver{Package: location, Imports: imports}, byName: map[string]Method{}}
+	collector := methodCollector{resolver: Resolver{Package: location}, byName: map[string]Method{}}
 	for _, decl := range synthetic.MethodsAST {
 		if decl != nil {
+			collector.resolver = collector.resolver.methodScope(synthetic, decl.Name.Name)
 			if err := collector.add(decl.Name.Name, decl.Type); err != nil {
 				return nil, err
 			}
@@ -109,15 +97,12 @@ func (t *Type) declaredMethods(pointer bool) ([]Method, error) {
 	if pointer {
 		for _, decl := range synthetic.PtrMethodsAST {
 			if decl != nil {
+				collector.resolver = collector.resolver.methodScope(synthetic, decl.Name.Name)
 				if err := collector.add(decl.Name.Name, decl.Type); err != nil {
 					return nil, err
 				}
 			}
 		}
-	}
-	aliases := map[string]string{}
-	for alias, location := range imports {
-		aliases[location] = alias
 	}
 	sets := [][]model.Method{synthetic.Methods.Value}
 	if pointer {
@@ -125,6 +110,11 @@ func (t *Type) declaredMethods(pointer bool) ([]Method, error) {
 	}
 	for _, set := range sets {
 		for _, method := range set {
+			collector.resolver = collector.resolver.methodScope(synthetic, method.Name)
+			aliases := map[string]string{}
+			for alias, location := range collector.resolver.Imports {
+				aliases[location] = alias
+			}
 			if err := collector.add(method.Name, method.Type.TypeAST(location, aliases)); err != nil {
 				return nil, err
 			}
@@ -136,6 +126,23 @@ func (t *Type) declaredMethods(pointer bool) ([]Method, error) {
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].Name < result[j].Name })
 	return result, nil
+}
+
+func (r Resolver) methodScope(synthetic *model.Type, name string) Resolver {
+	r.Imports = make(map[string]string)
+	for alias, item := range synthetic.ImportsForMethod(name) {
+		if item == nil {
+			continue
+		}
+		if alias == "" {
+			alias = item.Alias
+		}
+		if alias == "" {
+			alias = path.Base(item.Path)
+		}
+		r.Imports[alias] = item.Path
+	}
+	return r
 }
 
 type methodCollector struct {

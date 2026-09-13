@@ -20,6 +20,7 @@ const (
 	KindInterface
 	KindStruct
 	KindUnion
+	KindInstantiation
 )
 
 // Node is a single type node in the synthetic model graph.
@@ -28,6 +29,14 @@ const (
 type Node interface {
 	Kind() Kind
 }
+
+// Instantiation applies concrete type arguments to a named generic type.
+type Instantiation struct {
+	Base      Node
+	Arguments []Node
+}
+
+func (n *Instantiation) Kind() Kind { return KindInstantiation }
 
 // Basic represents built-in or package-local basic types.
 // Example: int → &Basic{Name:"int"}

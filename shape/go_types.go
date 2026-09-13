@@ -293,10 +293,6 @@ func (b *goTypeAuthority) resolve(r Resolver, source string) (types.Type, error)
 		return nil, err
 	}
 	named.SetUnderlying(underlying.Underlying())
-	aliases := map[string]string{}
-	for alias, location := range child.Imports {
-		aliases[location] = alias
-	}
 	known := map[string]bool{}
 	add := func(name string, fn *ast.FuncType, pointer bool) error {
 		if known[name] {
@@ -307,7 +303,7 @@ func (b *goTypeAuthority) resolve(r Resolver, source string) (types.Type, error)
 		if pointer {
 			receiver = types.NewPointer(named)
 		}
-		signature, err := b.signature(child, fn, nil, types.NewVar(token.NoPos, b.pkg(child.Package), "", receiver))
+		signature, err := b.signature(child.methodScope(descriptor, name), fn, nil, types.NewVar(token.NoPos, b.pkg(child.Package), "", receiver))
 		if err != nil {
 			return err
 		}
@@ -331,6 +327,10 @@ func (b *goTypeAuthority) resolve(r Resolver, source string) (types.Type, error)
 		pointer bool
 	}{{descriptor.Methods.Value, false}, {descriptor.Methods.Pointer, true}} {
 		for _, method := range set.methods {
+			aliases := map[string]string{}
+			for alias, location := range child.methodScope(descriptor, method.Name).Imports {
+				aliases[location] = alias
+			}
 			if err := add(method.Name, method.Type.TypeAST(child.Package, aliases), set.pointer); err != nil {
 				return nil, err
 			}

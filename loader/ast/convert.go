@@ -55,6 +55,16 @@ func astFuncTypeToModelFunc(ft *ast.FuncType, currentPkg string, aliasIndex map[
 // model.Union node.
 func astExprToModelNode(e ast.Expr, currentPkg string, aliasIndex map[string]model.ImportRef) model.Node {
 	switch v := e.(type) {
+	case *ast.ParenExpr:
+		return astExprToModelNode(v.X, currentPkg, aliasIndex)
+	case *ast.IndexExpr:
+		return &model.Instantiation{Base: astExprToModelNode(v.X, currentPkg, aliasIndex), Arguments: []model.Node{astExprToModelNode(v.Index, currentPkg, aliasIndex)}}
+	case *ast.IndexListExpr:
+		arguments := make([]model.Node, len(v.Indices))
+		for i, argument := range v.Indices {
+			arguments[i] = astExprToModelNode(argument, currentPkg, aliasIndex)
+		}
+		return &model.Instantiation{Base: astExprToModelNode(v.X, currentPkg, aliasIndex), Arguments: arguments}
 	case *ast.Ident:
 		switch v.Name {
 		case "int", "int8", "int16", "int32", "int64", "uint", "uint8", "uint16", "uint32", "uint64", "uintptr", "string", "bool", "float32", "float64", "complex64", "complex128", "byte", "rune", "error":
@@ -222,6 +232,14 @@ func collectExprAliases(exprs ...ast.Expr) map[string]struct{} {
 			return
 		}
 		switch v := e.(type) {
+		case *ast.IndexExpr:
+			walk(v.X)
+			walk(v.Index)
+		case *ast.IndexListExpr:
+			walk(v.X)
+			for _, argument := range v.Indices {
+				walk(argument)
+			}
 		case *ast.SelectorExpr:
 			if id, ok := v.X.(*ast.Ident); ok {
 				if id.Name != "" {

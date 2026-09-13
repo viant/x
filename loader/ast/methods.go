@@ -9,6 +9,11 @@ import (
 	"github.com/viant/x/syntetic/model"
 )
 
+type pendingMethod struct {
+	declaration *ast.FuncDecl
+	imports     map[string]model.ImportRef
+}
+
 // bindMethodToType associates an ast.FuncDecl method with its named type in pkg.
 func bindMethodToType(pkg *model.Package, fdecl *ast.FuncDecl, aliasIndex map[string]model.ImportRef) {
 	if pkg == nil || fdecl == nil || fdecl.Recv == nil || len(fdecl.Recv.List) == 0 {
@@ -59,6 +64,15 @@ func bindMethodToType(pkg *model.Package, fdecl *ast.FuncDecl, aliasIndex map[st
 		return
 	}
 	mf := astFuncTypeToModelFunc(fdecl.Type, pkg.PkgPath, aliasIndex)
+	if tpe.MethodImports == nil {
+		tpe.MethodImports = make(map[string]map[string]*model.ImportRef)
+	}
+	imports := make(map[string]*model.ImportRef, len(aliasIndex))
+	for alias, ref := range aliasIndex {
+		ref := ref
+		imports[alias] = &ref
+	}
+	tpe.MethodImports[fdecl.Name.Name] = imports
 	if ptr {
 		tpe.PtrMethodsAST = append(tpe.PtrMethodsAST, fdecl)
 	} else {
