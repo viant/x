@@ -10,6 +10,7 @@ import (
 	"path"
 	"strings"
 
+	xmodule "github.com/viant/x/module"
 	"github.com/viant/x/syntetic/model"
 )
 
@@ -58,30 +59,15 @@ func LoadModuleFS(ctx context.Context, fsys fs.FS, root string) (*model.Module, 
 
 // discoverModuleFS finds module root and module path by walking up to go.mod.
 func discoverModuleFS(fsys fs.FS, start string) (string, string, error) {
-	cur := start
-	for {
-		data, err := fs.ReadFile(fsys, path.Join(cur, "go.mod"))
-		if err == nil {
-			mp := parseModulePath(string(data))
-			if mp == "" {
-				return "", "", fmt.Errorf("loader: failed to parse module path at %s", path.Join(cur, "go.mod"))
-			}
-			return cur, mp, nil
-		}
-		if cur == "." || cur == "/" || cur == "" {
-			return "", "", fmt.Errorf("loader: go.mod not found from %s", start)
-		}
-		cur = path.Dir(cur)
+	info, err := xmodule.LocateFS(fsys, start)
+	if err != nil {
+		return "", "", err
 	}
+	return info.Dir, info.Path, nil
 }
 
 // parseModulePath extracts module path line from go.mod content.
 func parseModulePath(content string) string {
-	for _, line := range strings.Split(content, "\n") {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "module ") {
-			return strings.TrimSpace(strings.TrimPrefix(line, "module "))
-		}
-	}
-	return ""
+	modulePath, _ := xmodule.ParsePath("go.mod", []byte(content))
+	return modulePath
 }

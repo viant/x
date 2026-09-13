@@ -11,5 +11,6 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/viant/xreflect v0.0.0-20230303201326-f50afb0feb0d // indirect
 	golang.org/x/crypto v0.3.0 // indirect
+	golang.org/x/mod v0.17.0
 	golang.org/x/sys v0.2.0 // indirect
 )
