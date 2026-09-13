@@ -24,6 +24,7 @@ func (SourceParser) AppendStructFields(existing, generated []byte) ([]byte, erro
 type sourceInsertion struct {
 	offset int
 	text   string
+	end    int
 }
 type sourceAppend struct {
 	existing, generated    []byte
@@ -32,6 +33,9 @@ type sourceAppend struct {
 	oldImports, newImports map[string]string
 	insertions             []sourceInsertion
 	needed                 map[string]bool
+	updates                []SourceFieldTypeUpdate
+	authorized             map[string]string
+	retiredImports         map[string]bool
 }
 
 func (m *sourceAppend) merge() ([]byte, error) {
@@ -50,6 +54,9 @@ func (m *sourceAppend) merge() ([]byte, error) {
 	}
 	m.oldImports, m.newImports = m.imports(m.oldFile), m.imports(m.newFile)
 	m.needed = map[string]bool{}
+	if err = m.prepareUpdates(); err != nil {
+		return nil, err
+	}
 	existingTypes := map[string]*ast.TypeSpec{}
 	reserved := map[string]bool{}
 	for _, declaration := range m.oldFile.Decls {
@@ -100,7 +107,7 @@ func (m *sourceAppend) merge() ([]byte, error) {
 				if err != nil {
 					return nil, err
 				}
-				m.insertions = append(m.insertions, sourceInsertion{len(m.existing), "\n\ntype " + text + "\n"})
+				m.insertions = append(m.insertions, sourceInsertion{offset: len(m.existing), text: "\n\ntype " + text + "\n"})
 				continue
 			}
 			oldStruct, oldOK := previous.Type.(*ast.StructType)
@@ -142,12 +149,15 @@ func (m *sourceAppend) merge() ([]byte, error) {
 		result.Write(m.existing[position:insertion.offset])
 		result.WriteString(insertion.text)
 		position = insertion.offset
+		if insertion.end > position {
+			position = insertion.end
+		}
 	}
 	result.Write(m.existing[position:])
 	if _, err = parser.ParseFile(token.NewFileSet(), "merged.go", result.Bytes(), parser.SkipObjectResolution); err != nil {
 		return nil, fmt.Errorf("merged shape: %w", err)
 	}
-	return result.Bytes(), nil
+	return m.pruneRetiredImports(result.Bytes())
 }
 
 func (m *sourceAppend) parameters(fields *ast.FieldList, imports map[string]string) (string, error) {
@@ -222,7 +232,13 @@ func (m *sourceAppend) fields(owner string, previous, generated *ast.StructType)
 			if field.Tag != nil {
 				newTag, _ = strconv.Unquote(field.Tag.Value)
 			}
-			if oldType != newType || oldTag != newTag {
+			if _, authorized := m.authorized[owner+"."+name]; authorized {
+				if oldType != newType {
+					if err := m.updateField(owner, name, old, field); err != nil {
+						return err
+					}
+				}
+			} else if oldType != newType || oldTag != newTag {
 				return fmt.Errorf("shape field %s.%s has conflicting type or tag; explicit migration required", owner, name)
 			}
 		}
@@ -248,7 +264,7 @@ func (m *sourceAppend) fields(owner string, previous, generated *ast.StructType)
 		additions.WriteString("\n")
 	}
 	if additions.Len() != 0 {
-		m.insertions = append(m.insertions, sourceInsertion{m.oldSet.Position(previous.Fields.Closing).Offset, additions.String()})
+		m.insertions = append(m.insertions, sourceInsertion{offset: m.oldSet.Position(previous.Fields.Closing).Offset, text: additions.String()})
 	}
 	return nil
 }
@@ -387,6 +403,6 @@ func (m *sourceAppend) addImports() error {
 			break
 		}
 	}
-	m.insertions = append(m.insertions, sourceInsertion{offset, "\n" + strings.Join(lines, "") + "\n"})
+	m.insertions = append(m.insertions, sourceInsertion{offset: offset, text: "\n" + strings.Join(lines, "") + "\n"})
 	return nil
 }
