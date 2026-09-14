@@ -23,19 +23,11 @@ type LocalDiscovery struct {
 }
 
 func (d LocalDiscovery) Walk(ctx context.Context, visit func(File) error) error {
-	if len(d.Include) == 0 {
-		return fmt.Errorf("package include patterns are required")
+	if err := d.validatePatterns(); err != nil {
+		return err
 	}
 	if visit == nil {
 		return fmt.Errorf("package visitor is required")
-	}
-	for _, pattern := range append(append([]string(nil), d.Include...), d.Exclude...) {
-		if strings.TrimSpace(pattern) == "" {
-			return fmt.Errorf("empty package pattern")
-		}
-		if _, err := path.Match(strings.TrimSuffix(pattern, "/..."), ""); err != nil {
-			return fmt.Errorf("invalid package pattern %q: %w", pattern, err)
-		}
 	}
 	if err := ctx.Err(); err != nil {
 		return err
@@ -115,4 +107,19 @@ func (d LocalDiscovery) matches(patterns []string, importPath string) bool {
 		}
 	}
 	return false
+}
+
+func (d LocalDiscovery) validatePatterns() error {
+	if len(d.Include) == 0 {
+		return fmt.Errorf("package include patterns are required")
+	}
+	for _, pattern := range append(append([]string(nil), d.Include...), d.Exclude...) {
+		if strings.TrimSpace(pattern) == "" {
+			return fmt.Errorf("empty package pattern")
+		}
+		if _, err := path.Match(strings.TrimSuffix(pattern, "/..."), ""); err != nil {
+			return fmt.Errorf("invalid package pattern %q: %w", pattern, err)
+		}
+	}
+	return nil
 }

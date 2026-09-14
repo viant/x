@@ -3,7 +3,6 @@ package ast
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 	"sort"
 
@@ -44,7 +43,7 @@ func (l LocalPackageLoader) Load(ctx context.Context, imports ...string) (*Packa
 		if err != nil {
 			return nil, err
 		}
-		pkg, err := LoadPackageFS(ctx, os.DirFS(location.Module.Dir), filepath.ToSlash(relative))
+		pkg, err := LoadPackageFS(ctx, l.Workspace.SourceFS(location.Module), filepath.ToSlash(relative))
 		if err != nil {
 			return nil, err
 		}

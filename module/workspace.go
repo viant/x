@@ -20,6 +20,7 @@ type LocalWorkspace struct {
 	ModuleDirs []string
 }
 type Workspace struct {
+	selection    *BuildSelection
 	modules      map[string]*Info
 	roots        []workspaceRoot
 	replacements map[string][]localReplacement
@@ -211,6 +212,9 @@ func (w *Workspace) replacement(modulePath string) (string, error) {
 // Package resolves roots and applicable local replacements lazily. Missing
 // unused developer replacements cannot invalidate unrelated selected packages.
 func (w *Workspace) Package(importPath string) (*PackageLocation, error) {
+	if w != nil && w.selection != nil {
+		return w.selection.location(importPath), nil
+	}
 	if w == nil {
 		return nil, fmt.Errorf("local workspace is required")
 	}
@@ -280,6 +284,9 @@ func (w *Workspace) Package(importPath string) (*PackageLocation, error) {
 }
 
 func (w *Workspace) Walk(ctx context.Context, include, exclude []string, visit func(File) error) error {
+	if w != nil && w.selection != nil {
+		return w.selection.walk(ctx, include, exclude, visit)
+	}
 	if w == nil || len(w.roots) == 0 {
 		return fmt.Errorf("local workspace is required")
 	}
