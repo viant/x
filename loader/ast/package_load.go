@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"go/ast"
+	"go/build"
 	"go/parser"
 	"go/token"
 	"io/fs"
@@ -27,7 +28,7 @@ func LoadPackageFS(ctx context.Context, fsys fs.FS, dir string) (*model.Package,
 		return nil, err
 	}
 	if len(files) == 0 {
-		return nil, fmt.Errorf("loader: no go files in %s", dir)
+		return nil, &build.NoGoError{Dir: dir}
 	}
 
 	pkgPath, err := packagePathForDir(fsys, dir)
