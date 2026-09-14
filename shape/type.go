@@ -184,13 +184,19 @@ structure:
 				if err != nil {
 					return nil, err
 				}
-				fields, err := embedded.fields(visiting)
+				structural, err := embedded.IsStruct()
 				if err != nil {
 					return nil, err
 				}
-				for _, child := range fields {
-					child.Index = append([]int{index}, child.Index...)
-					result = append(result, child)
+				if structural {
+					fields, err := embedded.fields(visiting)
+					if err != nil {
+						return nil, err
+					}
+					for _, child := range fields {
+						child.Index = append([]int{index}, child.Index...)
+						result = append(result, child)
+					}
 				}
 			}
 			index++
