@@ -1,0 +1,7 @@
+json_fields.go adapts encoding/json field selection from Go 1.25.8
+(src/encoding/json/encode.go and tags.go). Copyright 2010, 2011 The Go Authors.
+The original BSD license is retained in JSON_FIELDS_LICENSE.
+Adaptation exposes linked-type field metadata on shape.Type, omits encoding,
+unsafe/linkname/cache machinery, and records nil anonymous-holder reachability.
+No standard-library encoder behavior is changed. This metadata describes
+encoding/json v1, not goexperiment.jsonv2 or another serializer.
