@@ -21,6 +21,8 @@ type Source struct {
 	Package string
 	Imports map[string]SourceImport
 	Fields  []SourceField
+	// Declarations are package-level names, excluding imports and methods.
+	Declarations []string
 }
 type SourceParser struct{}
 
@@ -51,6 +53,25 @@ func (SourceParser) parse(filename string, source any) (*Source, error) {
 		result.Imports[alias] = SourceImport{Path: location, Alias: alias, Explicit: imported.Name != nil}
 	}
 	for _, declaration := range file.Decls {
+		switch decl := declaration.(type) {
+		case *ast.FuncDecl:
+			if decl.Recv == nil && decl.Name.Name != "init" {
+				result.Declarations = append(result.Declarations, decl.Name.Name)
+			}
+		case *ast.GenDecl:
+			for _, entry := range decl.Specs {
+				switch item := entry.(type) {
+				case *ast.TypeSpec:
+					result.Declarations = append(result.Declarations, item.Name.Name)
+				case *ast.ValueSpec:
+					for _, name := range item.Names {
+						if name.Name != "_" {
+							result.Declarations = append(result.Declarations, name.Name)
+						}
+					}
+				}
+			}
+		}
 		general, ok := declaration.(*ast.GenDecl)
 		if !ok || general.Tok != token.TYPE {
 			continue
