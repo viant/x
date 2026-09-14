@@ -19,6 +19,8 @@ import (
 
 // LoadPackageFS parses all non-test .go files under dir within fsys and
 // produces a model.Package with files, types, functions, and imports.
+// If fsys implements PackageName(string) string, its declared package names
+// resolve unaliased imports before types and signatures are projected.
 func LoadPackageFS(ctx context.Context, fsys fs.FS, dir string) (*model.Package, error) {
 	files, err := listGoFiles(fsys, dir)
 	if err != nil {
@@ -115,7 +117,7 @@ func loadPackageFile(ctx context.Context, fsys fs.FS, filename string, pkg *mode
 	// embeds
 	collectEmbeds(ctx, fsys, filename, file, gf)
 	// decls
-	aliasIndex := buildAliasIndex(gf)
+	aliasIndex := buildAliasIndex(gf, fsys)
 	for _, decl := range file.Decls {
 		if fdecl, ok := decl.(*ast.FuncDecl); ok {
 			if fdecl.Recv != nil { // method

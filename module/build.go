@@ -146,18 +146,27 @@ func (w *Workspace) SourceFS(info *Info) fs.FS {
 		return source
 	}
 	selected := map[string]bool{}
+	packages := map[string]string{}
 	for _, pkg := range w.selection.Packages {
+		packages[pkg.ImportPath] = pkg.Name
 		for _, file := range append(append([]string{}, pkg.GoFiles...), pkg.CgoFiles...) {
 			selected[filepath.Join(pkg.Dir, file)] = true
 		}
 	}
-	return &selectedFS{FS: source, root: info.Dir, selected: selected}
+	return &selectedFS{FS: source, root: info.Dir, selected: selected, packages: packages}
 }
 
 type selectedFS struct {
 	fs.FS
 	root     string
 	selected map[string]bool
+	packages map[string]string
+}
+
+// PackageName supplies the declared name selected by Go, including dependencies
+// whose import path basename differs from their package clause.
+func (s *selectedFS) PackageName(importPath string) string {
+	return s.packages[importPath]
 }
 
 func (s *selectedFS) ReadDir(name string) ([]fs.DirEntry, error) {

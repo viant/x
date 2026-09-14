@@ -7,6 +7,7 @@ package ast
 import (
 	"go/ast"
 	"go/token"
+	"io/fs"
 	"path"
 	"strconv"
 
@@ -207,8 +208,9 @@ func astTypeParamsToModel(fl *ast.FieldList, currentPkg string, aliasIndex map[s
 }
 
 // buildAliasIndex returns a map from effective alias (as used in code) to ImportRef.
-// For unaliased imports, the effective alias is path.Base(importPath).
-func buildAliasIndex(gf *model.GoFile) map[string]model.ImportRef {
+// Build-backed filesystems supply Go's declared package names. Plain filesystems
+// retain path-based resolution when no package-name authority is available.
+func buildAliasIndex(gf *model.GoFile, fsys fs.FS) map[string]model.ImportRef {
 	out := map[string]model.ImportRef{}
 	if gf == nil || len(gf.Imports) == 0 {
 		return out
@@ -216,8 +218,13 @@ func buildAliasIndex(gf *model.GoFile) map[string]model.ImportRef {
 	for _, r := range gf.Imports {
 		alias := r.Alias
 		if alias == "" {
-			alias = path.Base(r.Path)
-		} // default alias from import path segment
+			if names, ok := fsys.(interface{ PackageName(string) string }); ok {
+				alias = names.PackageName(r.Path)
+			}
+			if alias == "" {
+				alias = path.Base(r.Path)
+			}
+		}
 		if alias == "." || alias == "_" {
 			continue
 		} // dot/blank imports are not resolvable
