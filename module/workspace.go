@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -15,6 +16,7 @@ import (
 
 // LocalWorkspace resolves explicitly available local source modules. It never
 // downloads modules or treats imported dependency packages as selected roots.
+// Workspace selection follows go env GOWORK; ModuleDirs remain explicit roots.
 type LocalWorkspace struct {
 	BaseDir    string
 	ModuleDirs []string
@@ -60,7 +62,7 @@ func (w LocalWorkspace) Resolve(ctx context.Context) (*Workspace, error) {
 	}
 	var work *modfile.WorkFile
 	var workDir string
-	if name, err := enclosingFile(base, "go.work"); err != nil {
+	if name, err := localWorkFile(ctx, base); err != nil {
 		return nil, err
 	} else if name != "" {
 		content, err := os.ReadFile(name)
@@ -154,6 +156,22 @@ func (w LocalWorkspace) Resolve(ctx context.Context) (*Workspace, error) {
 		}
 	}
 	return result, nil
+}
+
+// Ask Go for workspace authority, including persisted GOENV settings. This does
+// not list packages or resolve dependencies; source manifests remain local.
+func localWorkFile(ctx context.Context, base string) (string, error) {
+	cmd := exec.CommandContext(ctx, "go", "env", "GOWORK")
+	cmd.Dir = base
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("select local Go workspace: %w", err)
+	}
+	name := strings.TrimSpace(string(output))
+	if name == "off" {
+		return "", nil
+	}
+	return name, nil
 }
 
 func (w *Workspace) addReplacement(base string, replacement *modfile.Replace, work bool) {
