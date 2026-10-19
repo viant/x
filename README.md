@@ -66,6 +66,26 @@ See `examples/registry_render` for a complete runnable example.
   - `FromRegistry`/`FromRegistryFile` collect registry types into a Namespace/GoFile
   - Uses `SynteticType` when present, otherwise falls back to `xreflect.BuildType`
 
+## Local Go package discovery
+
+`module.LocalDiscovery` reads an optional `.goignore` from the nearest module
+root. Each module walked from a Go workspace uses its own file. Entries are
+module-root-relative literal paths, one per line; surrounding whitespace is
+trimmed, blank lines and full-line `#` comments are ignored, and a trailing
+slash is optional. An entry prunes that exact path and its descendants before
+discovery enters the directory. For example:
+
+```text
+# generated or local-only package trees
+internal/generated/
+tmp
+```
+
+The syntax does not support globs, negation, inline comments, recursive ignore
+files, or environment expansion. Ignore rules apply to local discovery even
+when an include pattern names the same path. This setting filters discovery
+candidates; it does not change Go build selection or dependency resolution.
+
 ## Why two loaders?
 
 - Use `loader/ast` for full fidelity from source (generics, aliases, methods,

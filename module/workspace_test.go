@@ -123,6 +123,57 @@ func TestLocalWorkspaceSelection(t *testing.T) {
 	}
 }
 
+func TestLocalWorkspaceWalkUsesEachModulesGoIgnore(t *testing.T) {
+	t.Setenv("GOENV", "off")
+	t.Setenv("GOWORK", "")
+	root := t.TempDir()
+	workspaceFiles(t, root, map[string]string{
+		"go.work":                 "go 1.21\nuse (\n ./app\n ./other\n)\n",
+		"app/go.mod":              "module corp.example/app\n",
+		"app/.goignore":           "api/app-only.go\n",
+		"app/api/app-only.go":     "package api\n",
+		"app/api/other-only.go":   "package api\n",
+		"app/api/keep.go":         "package api\n",
+		"other/go.mod":            "module corp.example/other\n",
+		"other/.goignore":         "api/other-only.go\n",
+		"other/api/app-only.go":   "package api\n",
+		"other/api/other-only.go": "package api\n",
+		"other/api/keep.go":       "package api\n",
+	})
+	workspace, err := (LocalWorkspace{BaseDir: filepath.Join(root, "app")}).Resolve(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolvedRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	selected := map[string]bool{}
+	err = workspace.Walk(context.Background(), []string{"..."}, nil, func(file File) error {
+		relative, err := filepath.Rel(resolvedRoot, file.Path)
+		if err != nil {
+			return err
+		}
+		selected[filepath.ToSlash(relative)] = true
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range map[string]bool{
+		"app/api/app-only.go":     false,
+		"app/api/other-only.go":   true,
+		"app/api/keep.go":         true,
+		"other/api/app-only.go":   true,
+		"other/api/other-only.go": false,
+		"other/api/keep.go":       true,
+	} {
+		if got := selected[name]; got != want {
+			t.Errorf("selected[%q]=%v want %v", name, got, want)
+		}
+	}
+}
+
 func TestLocalWorkspaceRejectsDuplicateModule(t *testing.T) {
 	t.Setenv("GOWORK", "off")
 	root := t.TempDir()

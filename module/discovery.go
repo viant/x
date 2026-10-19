@@ -47,12 +47,26 @@ func (d LocalDiscovery) Walk(ctx context.Context, visit func(File) error) error 
 	if !stat.IsDir() {
 		return fmt.Errorf("package discovery base must be a directory")
 	}
+	ignore, err := readGoIgnore(info.Dir)
+	if err != nil {
+		return err
+	}
 	return filepath.WalkDir(base, func(location string, entry fs.DirEntry, walkErr error) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
 		if walkErr != nil {
 			return walkErr
+		}
+		relative, err := filepath.Rel(info.Dir, location)
+		if err != nil {
+			return err
+		}
+		if ignore.matches(filepath.ToSlash(relative)) {
+			if entry.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
 		}
 		name := entry.Name()
 		if entry.IsDir() {
