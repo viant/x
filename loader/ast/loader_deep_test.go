@@ -25,3 +25,19 @@ func TestLoadPackageDeepFS_Cycle(t *testing.T) {
 		t.Fatalf("expected dependencies for a")
 	}
 }
+
+func TestLoadPackageDeepFSSkipsNestedModuleWithParentPrefix(t *testing.T) {
+	fsys := fstest.MapFS{
+		"root/go.mod":                {Data: []byte("module example.com/root\n")},
+		"root/app/app.go":            {Data: []byte("package app\nimport _ \"example.com/root/nested/child\"\ntype App struct{}\n")},
+		"root/nested/go.mod":         {Data: []byte("module example.com/root/nested\n")},
+		"root/nested/child/child.go": {Data: []byte("package child\ntype Child struct{}\n")},
+	}
+	loaded, err := LoadPackageDeepFS(context.Background(), fsys, "root/app")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(loaded.Dependencies) != 0 {
+		t.Fatalf("nested module entered deep dependencies: %+v", loaded.Dependencies)
+	}
+}

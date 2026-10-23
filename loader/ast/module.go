@@ -5,7 +5,9 @@ package ast
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"go/build"
 	"io/fs"
 	"path"
 	"strings"
@@ -32,11 +34,21 @@ func LoadModuleFS(ctx context.Context, fsys fs.FS, root string) (*model.Module, 
 		if err != nil {
 			return err
 		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if d.IsDir() {
 			base := path.Base(p)
-			if strings.HasPrefix(base, ".") || base == "vendor" {
+			if strings.HasPrefix(base, ".") || strings.HasPrefix(base, "_") || base == "vendor" || base == "testdata" {
 				if p != moduleRoot {
 					return fs.SkipDir
+				}
+			}
+			if p != moduleRoot {
+				if _, err := fs.Stat(fsys, path.Join(p, "go.mod")); err == nil {
+					return fs.SkipDir
+				} else if !errors.Is(err, fs.ErrNotExist) {
+					return err
 				}
 			}
 		} else {
@@ -44,7 +56,11 @@ func LoadModuleFS(ctx context.Context, fsys fs.FS, root string) (*model.Module, 
 		}
 		pkg, err := LoadPackageFS(ctx, fsys, p)
 		if err != nil {
-			return nil
+			var noGo *build.NoGoError
+			if errors.As(err, &noGo) {
+				return nil
+			}
+			return err
 		}
 		if pkg != nil && len(pkg.Types) > 0 {
 			mod.AddPackage(pkg)

@@ -2,6 +2,7 @@ package ast
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"path"
@@ -16,7 +17,22 @@ import (
 // import closure. Unrelated packages are never parsed; nested modules remain
 // separate authorities.
 func LoadModulePackagesFS(ctx context.Context, fsys fs.FS, directories ...string) (*model.Module, error) {
-	info, err := xmodule.LocateFS(fsys, ".")
+	if len(directories) == 0 {
+		return nil, fmt.Errorf("package directories are required")
+	}
+	first := path.Clean(directories[0])
+	if !fs.ValidPath(first) {
+		return nil, fmt.Errorf("invalid package directory %q", first)
+	}
+	moduleStart := first
+	if _, err := fs.Stat(fsys, "go.mod"); err == nil {
+		// A module rooted at the filesystem boundary owns this selection;
+		// naming only a nested module must not silently change authority.
+		moduleStart = "."
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return nil, err
+	}
+	info, err := xmodule.LocateFS(fsys, moduleStart)
 	if err != nil {
 		return nil, err
 	}

@@ -28,3 +28,27 @@ func TestSelectedModuleImportClosure(t *testing.T) {
 		}
 	}
 }
+
+func TestSelectedModuleRootBelowFSRoot(t *testing.T) {
+	fsys := fstest.MapFS{
+		"root/go.mod":                {Data: []byte("module example.com/root\n")},
+		"root/app/app.go":            {Data: []byte("package app\nimport \"example.com/root/shared\"\ntype App struct{ Value shared.Value }\n")},
+		"root/shared/value.go":       {Data: []byte("package shared\ntype Value struct{}\n")},
+		"root/unrelated/bad.go":      {Data: []byte("package unrelated\ntype {\n")},
+		"root/nested/go.mod":         {Data: []byte("module example.com/root/nested\n")},
+		"root/nested/child/child.go": {Data: []byte("package child\ntype Child struct{}\n")},
+	}
+	loaded, err := LoadModulePackagesFS(context.Background(), fsys, "root/app")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !loaded.HasPackage("example.com/root/app") || !loaded.HasPackage("example.com/root/shared") || loaded.HasPackage("example.com/root/unrelated") {
+		t.Fatalf("selected import closure changed: %+v", loaded.Packages)
+	}
+	if _, err = LoadModulePackagesFS(context.Background(), fsys, "root/app", "root/nested/child"); err == nil {
+		t.Fatal("cross-module package selection accepted")
+	}
+	if _, err = LoadModulePackagesFS(context.Background(), fsys); err == nil {
+		t.Fatal("empty package selection accepted")
+	}
+}

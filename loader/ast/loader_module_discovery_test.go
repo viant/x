@@ -3,6 +3,7 @@ package ast
 import (
 	"context"
 	"testing"
+	"testing/fstest"
 )
 
 func TestLoadModuleFS_Discovery(t *testing.T) {
@@ -22,5 +23,25 @@ func TestLoadModuleFS_Discovery(t *testing.T) {
 	}
 	if mod.HasPackage("example.com/m/vendor/x") {
 		t.Fatalf("vendor directory should be skipped")
+	}
+}
+
+func TestLoadModuleFSSkipsNestedModuleAndPropagatesParseError(t *testing.T) {
+	fsys := fstest.MapFS{
+		"root/go.mod":                {Data: []byte("module example.com/root\n")},
+		"root/app/app.go":            {Data: []byte("package app\ntype App struct{}\n")},
+		"root/nested/go.mod":         {Data: []byte("module example.com/root/nested\n")},
+		"root/nested/child/child.go": {Data: []byte("package child\ntype Child struct{}\n")},
+	}
+	loaded, err := LoadModuleFS(context.Background(), fsys, "root")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !loaded.HasPackage("example.com/root/app") || loaded.HasPackage("example.com/root/nested/child") {
+		t.Fatalf("nested module entered owning inventory: %+v", loaded.Packages)
+	}
+	fsys["root/bad/bad.go"] = &fstest.MapFile{Data: []byte("package bad\ntype {\n")}
+	if _, err = LoadModuleFS(context.Background(), fsys, "root"); err == nil {
+		t.Fatal("malformed package was silently omitted")
 	}
 }

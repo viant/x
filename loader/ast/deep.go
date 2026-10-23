@@ -7,9 +7,9 @@ import (
 	"context"
 	"io/fs"
 	"path"
-	"path/filepath"
 	"strings"
 
+	xmodule "github.com/viant/x/module"
 	"github.com/viant/x/syntetic/model"
 )
 
@@ -52,17 +52,24 @@ func loadPackageDeepFS(ctx context.Context, fsys fs.FS, dir, moduleRoot, moduleP
 		if isStdlibImport(imp.Path) {
 			continue
 		}
-		// Only load dependencies within the same module
+		// A prefix-matching import can belong to a nested module. Follow only
+		// dependencies whose nearest go.mod is still the owning module.
 		if imp.Path == modulePath || strings.HasPrefix(imp.Path, modulePath+"/") {
 			rel := strings.TrimPrefix(imp.Path, modulePath)
 			rel = strings.TrimPrefix(rel, "/")
-			depDir := path.Join(moduleRoot, filepath.ToSlash(rel))
-			depPkg, err := loadPackageDeepFS(ctx, fsys, depDir, moduleRoot, modulePath, visited, opt)
+			depDir := path.Join(moduleRoot, rel)
+			owner, err := xmodule.LocateFS(fsys, depDir)
 			if err != nil {
 				return nil, err
 			}
-			pkg.Dependencies = append(pkg.Dependencies, depPkg)
-			continue
+			if owner.Dir == moduleRoot && owner.Path == modulePath {
+				depPkg, err := loadPackageDeepFS(ctx, fsys, depDir, moduleRoot, modulePath, visited, opt)
+				if err != nil {
+					return nil, err
+				}
+				pkg.Dependencies = append(pkg.Dependencies, depPkg)
+				continue
+			}
 		}
 		// External import: attempt resolution via options.
 		if opt != nil && opt.ResolveExternal != nil {
