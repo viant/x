@@ -3,6 +3,8 @@ package model
 import (
 	"go/ast"
 	"go/token"
+	"strconv"
+	"strings"
 )
 
 // TypeAST renders a function type through the model's canonical AST owner.
@@ -101,7 +103,11 @@ func nodeToAST(n Node, currentPkg string, aliases map[string]string) ast.Expr {
 			}
 			field.Type = nodeToAST(f.Type, currentPkg, aliases)
 			if f.Tag != "" {
-				field.Tag = &ast.BasicLit{Kind: token.STRING, Value: "`" + f.Tag + "`"}
+				literal := "`" + f.Tag + "`"
+				if strings.Contains(f.Tag, "`") {
+					literal = strconv.Quote(f.Tag)
+				}
+				field.Tag = &ast.BasicLit{Kind: token.STRING, Value: literal}
 			}
 			fl.List = append(fl.List, &field)
 		}

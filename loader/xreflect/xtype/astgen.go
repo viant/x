@@ -5,6 +5,7 @@ import (
 	"go/ast"
 	"go/token"
 	"strconv"
+	"strings"
 )
 
 func ToAST(n Node, imps *ImportSet) (ast.Expr, error) {
@@ -159,7 +160,11 @@ func toStructFieldList(fields []Field, imps *ImportSet) (*ast.FieldList, error) 
 		}
 		field := &ast.Field{Names: names, Type: expr}
 		if f.Tag != "" {
-			field.Tag = &ast.BasicLit{Kind: token.STRING, Value: "`" + f.Tag + "`"}
+			literal := "`" + f.Tag + "`"
+			if strings.Contains(f.Tag, "`") {
+				literal = strconv.Quote(f.Tag)
+			}
+			field.Tag = &ast.BasicLit{Kind: token.STRING, Value: literal}
 		}
 		out[i] = field
 	}
