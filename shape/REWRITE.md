@@ -36,3 +36,24 @@ runtime reflection restrictions produce errors, not partial rewritten contracts.
 
 The callback owns tag policy and validation. This package does not infer permissions,
 parse enums, decide requiredness, bind dependencies or cache caller variants.
+
+## Values for native codecs
+
+`CompileProjection(original, effective)` prepares value mapping for a rewritten
+representation. `Apply(value)` accepts the exact source type. Compile the reverse
+direction separately when decoded effective values must return to canonical types.
+Unchanged values are reused. Changed values use legal Go conversions where possible;
+otherwise fields are mapped by their preserved structural position, not JSON names.
+No unsafe memory reinterpretation is performed.
+
+The projection preserves nil collections/pointers, embedded structure, collection
+length/capacity, and shared references among changed pointers/maps. It is not a
+deep clone or a transaction boundary: unchanged subvalues and legal converted
+pointers can share source storage. Callers must own mutable values during decoding.
+Offset slice aliases and interior pointers are not guaranteed to retain aliasing
+across changed representations. Private fields requiring non-convertible structural
+changes and changes to custom-encoded/recursive types require a codec adapter.
+
+The result carries the effective type, so native JSON codecs can consume the changed
+tags. Merely compiling metadata for an effective type while passing the original
+typed value to a codec does not guarantee those tags will be used.
