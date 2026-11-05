@@ -22,6 +22,12 @@ Nil callbacks return the root immediately. Paths use original Go member names,
 in paths even when JSON promotes their members. Map keys, private non-embedded
 storage and runtime interface implementations are not traversed.
 
+`VisitStructs` enumerates original struct owners in parent-first order, using the
+same paths as field rewriting. It includes empty structs and owners beneath root
+collections and nested pointer/slice/array/map-value wrappers. Recursive back-edges
+are not revisited. This lets contract hosts discover nested type hooks without
+implementing a second reflection walker or flattening embedded fields.
+
 Field storage types, order, offsets, package authority and Anonymous flags are
 preserved. Renames must be exported valid identifiers without duplicate fields;
 embedded holders cannot be renamed. No fields are removed. A retagged embedded

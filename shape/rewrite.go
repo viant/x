@@ -27,6 +27,7 @@ type FieldRewriter func(parentPath string, parent reflect.Type, field *FieldMeta
 type RewritePlan struct{ root *rewriteNode }
 
 type rewriteNode struct {
+	backEdge bool
 	original reflect.Type
 	path     string
 	fields   []rewriteField
@@ -51,6 +52,7 @@ func CompileRewrite(original reflect.Type) (*RewritePlan, error) {
 	compile = func(t reflect.Type, path string) *rewriteNode {
 		n := &rewriteNode{original: t, path: path}
 		if index, ok := active[t]; ok {
+			n.backEdge = true
 			for _, ancestor := range stack[index:] {
 				ancestor.cycle = true
 			}
@@ -92,6 +94,41 @@ func (p *RewritePlan) Original() reflect.Type {
 		return nil
 	}
 	return p.root.original
+}
+
+// VisitStructs visits original structural owners in parent-first order, including
+// owners without fields and owners inside pointer/slice/array/map-value wrappers.
+// Paths are identical to the parent paths supplied to FieldRewriter. Recursive
+// back-edges are not revisited. The visitor never receives mutable plan state.
+func (p *RewritePlan) VisitStructs(visit func(path string, original reflect.Type) error) error {
+	if p == nil || p.root == nil {
+		return fmt.Errorf("rewrite plan is required")
+	}
+	if visit == nil {
+		return nil
+	}
+	return p.root.visitStructs(visit)
+}
+func (n *rewriteNode) visitStructs(visit func(string, reflect.Type) error) error {
+	if n.backEdge {
+		return nil
+	}
+	if n.original.Kind() == reflect.Struct {
+		if err := visit(n.path, n.original); err != nil {
+			return err
+		}
+	}
+	if n.elem != nil {
+		return n.elem.visitStructs(visit)
+	}
+	for i := range n.fields {
+		if child := n.fields[i].child; child != nil {
+			if err := child.visitStructs(visit); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // Rewrite returns the exact linked type at every unchanged node, even when a
