@@ -6,13 +6,16 @@ import (
 	"fmt"
 	"go/token"
 	"reflect"
+	"sync"
 )
 
 // FieldMetadata is the editable part of a field. Storage type, position,
 // embedding and package authority are deliberately not editable.
 type FieldMetadata struct {
-	Name string
-	Tag  reflect.StructTag
+	// SkipChildren is traversal control only; it is never stored as schema metadata.
+	SkipChildren bool
+	Name         string
+	Tag          reflect.StructTag
 }
 
 // FieldRewriter receives immutable original metadata. A nil result means no
@@ -24,7 +27,11 @@ type FieldRewriter func(parentPath string, parent reflect.Type, field *FieldMeta
 // RewritePlan holds immutable direct-field traversal metadata. Cache this plan
 // beside its original linked type; concurrent Rewrite calls share no edit state.
 // It does not cache caller policy decisions or rewritten variants.
-type RewritePlan struct{ root *rewriteNode }
+type RewritePlan struct {
+	root               *rewriteNode
+	representationOnce sync.Once
+	representation     *Representation
+}
 
 type rewriteNode struct {
 	backEdge bool
@@ -180,6 +187,7 @@ func (n *rewriteNode) rewrite(rewrite FieldRewriter) (reflect.Type, error) {
 	for i := range n.fields {
 		field := &n.fields[i]
 		name, tag := field.original.Name, field.original.Tag
+		skipChildren := false
 		if field.original.IsExported() {
 			edit, err := rewrite(n.path, t, &field.metadata)
 			if err != nil {
@@ -190,10 +198,11 @@ func (n *rewriteNode) rewrite(rewrite FieldRewriter) (reflect.Type, error) {
 					return nil, fmt.Errorf("invalid field rename %s.%s to %q", n.path, name, edit.Name)
 				}
 				name, tag = edit.Name, edit.Tag
+				skipChildren = edit.SkipChildren
 			}
 		}
 		child := field.original.Type
-		if field.child != nil {
+		if field.child != nil && !skipChildren {
 			var err error
 			child, err = field.child.rewrite(rewrite)
 			if err != nil {
@@ -239,11 +248,18 @@ var rewriteOpaqueInterfaces = []reflect.Type{
 	reflect.TypeOf((*interface{ IsZero() bool })(nil)).Elem(),
 }
 
-func (n *rewriteNode) allowChange() error {
+func (n *rewriteNode) allowChange() error { return n.allowChangeWith(rewriteOpaqueInterfaces) }
+
+// Metadata consumers keep the original IsZero receiver. Complete JSON/Text
+// owners still control their own representation and cannot be retagged inside.
+func (n *rewriteNode) allowMetadataChange() error {
+	return n.allowChangeWith(rewriteOpaqueInterfaces[:len(rewriteOpaqueInterfaces)-1])
+}
+func (n *rewriteNode) allowChangeWith(opaque []reflect.Type) error {
 	if n.cycle {
 		return fmt.Errorf("rewriting recursive type %s at %s requires a codec projection", n.original, n.path)
 	}
-	for _, codec := range rewriteOpaqueInterfaces {
+	for _, codec := range opaque {
 		if n.original.Implements(codec) || reflect.PointerTo(n.original).Implements(codec) {
 			return fmt.Errorf("rewriting custom encoded type %s at %s requires a codec projection", n.original, n.path)
 		}

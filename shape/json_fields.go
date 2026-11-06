@@ -47,8 +47,12 @@ type jsonCandidate struct {
 	JSONField
 	tagged bool
 }
+type jsonOwner struct {
+	typ            reflect.Type
+	representation *Representation
+}
 type jsonLevel struct {
-	typ      reflect.Type
+	jsonOwner
 	index    []int
 	optional bool
 }
@@ -63,21 +67,58 @@ func (t *Type) JSONFields() ([]JSONField, error) {
 	if root.Kind() != reflect.Struct {
 		return nil, fmt.Errorf("JSON field selection requires a struct, got %s", root)
 	}
+	return jsonFields(root, nil)
+}
+
+// JSONFields applies native JSON dominance to metadata while retaining canonical
+// field indexes/types for value access. Embedded holders are never flattened in
+// the representation itself.
+func (r *Representation) JSONFields() ([]JSONField, error) {
+	if r == nil {
+		return nil, fmt.Errorf("representation is required")
+	}
+	if !r.Changed() {
+		return Linked(r.Original()).JSONFields()
+	}
+	for r.Original().Kind() == reflect.Pointer {
+		r = r.Elem()
+	}
+	if r.Original().Kind() != reflect.Struct {
+		return nil, fmt.Errorf("JSON field selection requires a struct")
+	}
+	return jsonFields(r.Original(), r)
+}
+
+func jsonFields(root reflect.Type, representation *Representation) ([]JSONField, error) {
+	if representation != nil && !representation.Changed() {
+		representation = nil
+	}
 	current := []jsonLevel{}
-	next := []jsonLevel{{typ: root}}
-	var count, nextCount map[reflect.Type]int
-	visited := map[reflect.Type]bool{}
+	next := []jsonLevel{{jsonOwner: jsonOwner{typ: root, representation: representation}}}
+	var count, nextCount map[jsonOwner]int
+	visited := map[jsonOwner]bool{}
 	var fields []jsonCandidate
 	for len(next) > 0 {
 		current, next = next, current[:0]
-		count, nextCount = nextCount, map[reflect.Type]int{}
+		count, nextCount = nextCount, map[jsonOwner]int{}
 		for _, parent := range current {
-			if visited[parent.typ] {
+			if visited[parent.jsonOwner] {
 				continue
 			}
-			visited[parent.typ] = true
+			visited[parent.jsonOwner] = true
 			for i := 0; i < parent.typ.NumField(); i++ {
 				sf := parent.typ.Field(i)
+				var child *Representation
+				if parent.representation != nil {
+					sf = parent.representation.Field(i)
+					child = parent.representation.FieldShape(i)
+					for child != nil && child.Original().Kind() == reflect.Pointer {
+						child = child.Elem()
+					}
+					if child != nil && !child.Changed() {
+						child = nil
+					}
+				}
 				if sf.Anonymous {
 					base := sf.Type
 					if base.Kind() == reflect.Pointer {
@@ -120,14 +161,15 @@ func (t *Type) JSONFields() ([]JSONField, error) {
 						Name:  name, Quoted: quoted, OmitEmpty: metadata.contains("omitempty"), OmitZero: metadata.contains("omitzero"), OptionalHolder: parent.optional,
 					}, tagged: tagged}
 					fields = append(fields, field)
-					if count[parent.typ] > 1 {
+					if count[parent.jsonOwner] > 1 {
 						fields = append(fields, field)
 					}
 					continue
 				}
-				nextCount[ft]++
-				if nextCount[ft] == 1 {
-					next = append(next, jsonLevel{typ: ft, index: index, optional: parent.optional || sf.Type.Kind() == reflect.Pointer})
+				owner := jsonOwner{typ: ft, representation: child}
+				nextCount[owner]++
+				if nextCount[owner] == 1 {
+					next = append(next, jsonLevel{jsonOwner: owner, index: index, optional: parent.optional || sf.Type.Kind() == reflect.Pointer})
 				}
 			}
 		}
