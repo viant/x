@@ -52,16 +52,23 @@ func (p *RewritePlan) RewriteRepresentation(rewrite FieldRewriter) (*Representat
 	return p.representation.rewrite(rewrite)
 }
 func linkedRepresentation(node *rewriteNode) *Representation {
+	return linkedRepresentationMemo(node, make(map[*rewriteNode]*Representation))
+}
+func linkedRepresentationMemo(node *rewriteNode, seen map[*rewriteNode]*Representation) *Representation {
+	if previous := seen[node]; previous != nil {
+		return previous
+	}
 	result := &Representation{node: node, original: node.original}
+	seen[node] = result
 	if node.elem != nil {
-		result.element = linkedRepresentation(node.elem)
+		result.element = linkedRepresentationMemo(node.elem, seen)
 	}
 	if len(node.fields) > 0 {
 		result.fields = make([]representationField, len(node.fields))
 		for i, field := range node.fields {
 			child := &Representation{original: field.original.Type}
 			if field.child != nil {
-				child = linkedRepresentation(field.child)
+				child = linkedRepresentationMemo(field.child, seen)
 			}
 			result.fields[i] = representationField{original: field.original, metadata: field.metadata, shape: child}
 		}
@@ -69,17 +76,22 @@ func linkedRepresentation(node *rewriteNode) *Representation {
 	return result
 }
 func (r *Representation) rewrite(rewrite FieldRewriter) (*Representation, error) {
+	return r.rewriteAt("", rewrite)
+}
+func (r *Representation) rewriteAt(path string, rewrite FieldRewriter) (*Representation, error) {
 	if r.node == nil || r.node.backEdge {
 		return r, nil
 	}
+	nodeAt := *r.node
+	nodeAt.path = path
 	result := r
 	if r.element != nil {
-		child, err := r.element.rewrite(rewrite)
+		child, err := r.element.rewriteAt(elementPath(path, r.original.Kind()), rewrite)
 		if err != nil {
 			return nil, err
 		}
 		if child != r.element {
-			if err = r.node.allowMetadataChange(); err != nil {
+			if err = nodeAt.allowMetadataChange(); err != nil {
 				return nil, err
 			}
 			copy := *r
@@ -92,9 +104,9 @@ func (r *Representation) rewrite(rewrite FieldRewriter) (*Representation, error)
 	for i, field := range r.fields {
 		metadata := field.metadata
 		if field.original.IsExported() {
-			edit, err := rewrite(r.node.path, r.original, &metadata)
+			edit, err := rewrite(path, r.original, &metadata)
 			if err != nil {
-				return nil, fmt.Errorf("field %s.%s: %w", r.node.path, field.original.Name, err)
+				return nil, fmt.Errorf("field %s.%s: %w", path, field.original.Name, err)
 			}
 			selected := field.metadata
 			if edit != nil {
@@ -102,7 +114,7 @@ func (r *Representation) rewrite(rewrite FieldRewriter) (*Representation, error)
 			}
 			metadata = selected
 			if metadata.Name != field.original.Name && (!token.IsIdentifier(metadata.Name) || !token.IsExported(metadata.Name) || field.original.Anonymous) {
-				return nil, fmt.Errorf("invalid field rename %s.%s to %q", r.node.path, field.original.Name, metadata.Name)
+				return nil, fmt.Errorf("invalid field rename %s.%s to %q", path, field.original.Name, metadata.Name)
 			}
 		}
 		skipChildren := metadata.SkipChildren
@@ -110,7 +122,7 @@ func (r *Representation) rewrite(rewrite FieldRewriter) (*Representation, error)
 		child := field.shape
 		var err error
 		if !skipChildren {
-			child, err = field.shape.rewrite(rewrite)
+			child, err = field.shape.rewriteAt(fieldPath(path, field.original.Name), rewrite)
 			if err != nil {
 				return nil, err
 			}
@@ -119,7 +131,7 @@ func (r *Representation) rewrite(rewrite FieldRewriter) (*Representation, error)
 			continue
 		}
 		if result == r {
-			if err = r.node.allowMetadataChange(); err != nil {
+			if err = nodeAt.allowMetadataChange(); err != nil {
 				return nil, err
 			}
 			copy := *r

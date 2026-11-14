@@ -34,12 +34,13 @@ type RewritePlan struct {
 }
 
 type rewriteNode struct {
-	backEdge bool
-	original reflect.Type
-	path     string
-	fields   []rewriteField
-	elem     *rewriteNode
-	cycle    bool
+	containsBackEdge bool
+	backEdge         bool
+	original         reflect.Type
+	path             string
+	fields           []rewriteField
+	elem             *rewriteNode
+	cycle            bool
 }
 type rewriteField struct {
 	original reflect.StructField
@@ -54,12 +55,17 @@ func CompileRewrite(original reflect.Type) (*RewritePlan, error) {
 		return nil, fmt.Errorf("original type is required")
 	}
 	active := map[reflect.Type]int{}
+	completed := map[reflect.Type]*rewriteNode{}
 	var stack []*rewriteNode
 	var compile func(reflect.Type, string) *rewriteNode
 	compile = func(t reflect.Type, path string) *rewriteNode {
+		if cached := completed[t]; cached != nil {
+			return cached
+		}
 		n := &rewriteNode{original: t, path: path}
 		if index, ok := active[t]; ok {
 			n.backEdge = true
+			n.containsBackEdge = true
 			for _, ancestor := range stack[index:] {
 				ancestor.cycle = true
 			}
@@ -91,6 +97,19 @@ func CompileRewrite(original reflect.Type) (*RewritePlan, error) {
 				}
 			}
 		}
+		if n.elem != nil {
+			n.containsBackEdge = n.elem.containsBackEdge
+		}
+		for _, field := range n.fields {
+			if field.child != nil && field.child.containsBackEdge {
+				n.containsBackEdge = true
+			}
+		}
+		// Recursive expansions depend on the active ancestor chain. Only
+		// completed acyclic subgraphs can be shared across occurrences.
+		if !n.containsBackEdge {
+			completed[t] = n
+		}
 		return n
 	}
 	return &RewritePlan{root: compile(original, "")}, nil
@@ -114,23 +133,23 @@ func (p *RewritePlan) VisitStructs(visit func(path string, original reflect.Type
 	if visit == nil {
 		return nil
 	}
-	return p.root.visitStructs(visit)
+	return p.root.visitStructsAt("", visit)
 }
-func (n *rewriteNode) visitStructs(visit func(string, reflect.Type) error) error {
+func (n *rewriteNode) visitStructsAt(path string, visit func(string, reflect.Type) error) error {
 	if n.backEdge {
 		return nil
 	}
 	if n.original.Kind() == reflect.Struct {
-		if err := visit(n.path, n.original); err != nil {
+		if err := visit(path, n.original); err != nil {
 			return err
 		}
 	}
 	if n.elem != nil {
-		return n.elem.visitStructs(visit)
+		return n.elem.visitStructsAt(elementPath(path, n.original.Kind()), visit)
 	}
 	for i := range n.fields {
 		if child := n.fields[i].child; child != nil {
-			if err := child.visitStructs(visit); err != nil {
+			if err := child.visitStructsAt(fieldPath(path, n.fields[i].original.Name), visit); err != nil {
 				return err
 			}
 		}
@@ -156,13 +175,17 @@ func (p *RewritePlan) Rewrite(rewrite FieldRewriter) (result reflect.Type, err e
 			err = fmt.Errorf("rewrite type %s: %v", p.root.original, recovered)
 		}
 	}()
-	return p.root.rewrite(rewrite)
+	return p.root.rewriteAt("", rewrite)
 }
 
-func (n *rewriteNode) rewrite(rewrite FieldRewriter) (reflect.Type, error) {
+func (n *rewriteNode) rewriteAt(path string, rewrite FieldRewriter) (reflect.Type, error) {
+	// The path belongs to this traversal occurrence, not the shared node.
+	local := *n
+	local.path = path
+	n = &local
 	t := n.original
 	if n.elem != nil {
-		elem, err := n.elem.rewrite(rewrite)
+		elem, err := n.elem.rewriteAt(elementPath(path, t.Kind()), rewrite)
 		if err != nil {
 			return nil, err
 		}
@@ -204,7 +227,7 @@ func (n *rewriteNode) rewrite(rewrite FieldRewriter) (reflect.Type, error) {
 		child := field.original.Type
 		if field.child != nil && !skipChildren {
 			var err error
-			child, err = field.child.rewrite(rewrite)
+			child, err = field.child.rewriteAt(fieldPath(path, field.original.Name), rewrite)
 			if err != nil {
 				return nil, err
 			}
